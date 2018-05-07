@@ -70,6 +70,9 @@ export class AwsAthenaDatasource {
         datasourceId: this.id,
         queryType: target.type || 'timeserie',
         region: target.region || this.defaultRegion,
+        timestampColumn: target.timestampColumn,
+        valueColumn: target.valueColumn,
+        legendFormat: target.legendFormat || '',
         input: {
           queryExecutionId: this.templateSrv.replace(target.queryExecutionId, options.scopedVars)
         }

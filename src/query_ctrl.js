@@ -7,6 +7,9 @@ export class AwsAthenaDatasourceQueryCtrl extends QueryCtrl {
     this.scope = $scope;
     this.target.type = this.target.type || 'timeserie';
     this.target.region = this.target.region || '';
+    this.target.timestampColumn = this.target.timestampColumn || '';
+    this.target.valueColumn = this.target.valueColumn || '';
+    this.target.legendFormat = this.target.legendFormat || '';
     this.target.queryExecutionId = this.target.queryExecutionId || '';
   }
 
