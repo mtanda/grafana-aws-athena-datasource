@@ -68,7 +68,7 @@ export class AwsAthenaDatasource {
         refId: target.refId,
         hide: target.hide,
         datasourceId: this.id,
-        queryType: target.type || 'timeserie',
+        format: target.type || 'timeserie',
         region: target.region || this.defaultRegion,
         timestampColumn: target.timestampColumn,
         valueColumn: target.valueColumn,

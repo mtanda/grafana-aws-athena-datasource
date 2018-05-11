@@ -24,7 +24,7 @@ type AwsAthenaDatasource struct {
 
 type Target struct {
 	RefId           string
-	QueryType       string
+	Format          string
 	Region          string
 	Input           athena.GetQueryResultsInput
 	TimestampColumn string
@@ -65,7 +65,7 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 			return nil, err
 		}
 
-		switch target.QueryType {
+		switch target.Format {
 		case "timeserie":
 			r, err := parseTimeSeriesResponse(resp, target.RefId, target.TimestampColumn, target.ValueColumn, target.LegendFormat)
 			if err != nil {
