@@ -2,7 +2,7 @@ import _ from "lodash";
 import TableModel from 'app/core/table_model';
 
 export class AwsAthenaDatasource {
-  constructor(instanceSettings, $q, backendSrv, templateSrv) {
+  constructor(instanceSettings, $q, backendSrv, templateSrv, timeSrv) {
     this.type = instanceSettings.type;
     this.url = instanceSettings.url;
     this.name = instanceSettings.name;
@@ -11,6 +11,7 @@ export class AwsAthenaDatasource {
     this.q = $q;
     this.backendSrv = backendSrv;
     this.templateSrv = templateSrv;
+    this.timeSrv = timeSrv;
   }
 
   query(options) {
@@ -82,5 +83,73 @@ export class AwsAthenaDatasource {
 
     options.targets = targets;
     return options;
+  }
+
+  metricFindQuery(query) {
+    let region;
+
+    let namedQueryNamesQuery = query.match(/^named_query_names\(([^\)]+?)\)/);
+    if (namedQueryNamesQuery) {
+      region = namedQueryNamesQuery[1];
+      return this.doMetricQueryRequest('named_query_names', {
+        region: this.templateSrv.replace(region),
+      });
+    }
+
+    let namedQueryQueryQuery = query.match(/^named_query_queries\(([^,]+?),\s?(.+)\)/);
+    if (namedQueryQueryQuery) {
+      region = namedQueryQueryQuery[1];
+      let pattern = namedQueryQueryQuery[2];
+      return this.doMetricQueryRequest('named_query_queries', {
+        region: this.templateSrv.replace(region),
+        pattern: this.templateSrv.replace(pattern, {}, 'regex'),
+      });
+    }
+
+    let queryExecutionIdsQuery = query.match(/^query_execution_ids\(([^,]+?),\s?(.+)\)/);
+    if (queryExecutionIdsQuery) {
+      region = queryExecutionIdsQuery[1];
+      let pattern = queryExecutionIdsQuery[2];
+      return this.doMetricQueryRequest('query_execution_ids', {
+        region: this.templateSrv.replace(region),
+        pattern: this.templateSrv.replace(pattern, {}, 'regex'),
+      });
+    }
+
+    return this.$q.when([]);
+  }
+
+  doMetricQueryRequest(subtype, parameters) {
+    var range = this.timeSrv.timeRange();
+    return this.backendSrv.datasourceRequest({
+      url: '/api/tsdb/query',
+      method: 'POST',
+      data: {
+        from: range.from.valueOf().toString(),
+        to: range.to.valueOf().toString(),
+        queries: [
+          _.extend(
+            {
+              refId: 'metricFindQuery',
+              datasourceId: this.id,
+              queryType: 'metricFindQuery',
+              subtype: subtype,
+            },
+            parameters
+          ),
+        ],
+      }
+    }).then(r => {
+      return this.transformSuggestDataFromTable(r.data);
+    });
+  }
+
+  transformSuggestDataFromTable(suggestData) {
+    return _.map(suggestData.results['metricFindQuery'].tables[0].rows, v => {
+      return {
+        text: v[0],
+        value: v[1],
+      };
+    });
   }
 }

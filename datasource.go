@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/athena"
 
+	"github.com/grafana/grafana/pkg/components/simplejson"
 	"github.com/grafana/grafana_plugin_model/go/datasource"
 	plugin "github.com/hashicorp/go-plugin"
 )
@@ -24,6 +26,7 @@ type AwsAthenaDatasource struct {
 
 type Target struct {
 	RefId           string
+	QueryType       string
 	Format          string
 	Region          string
 	Input           athena.GetQueryResultsInput
@@ -42,6 +45,29 @@ func init() {
 
 func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.DatasourceRequest) (*datasource.DatasourceResponse, error) {
 	response := &datasource.DatasourceResponse{}
+
+	modelJson, err := simplejson.NewJson([]byte(tsdbReq.Queries[0].ModelJson))
+	if err != nil {
+		return nil, err
+	}
+	if modelJson.Get("queryType").MustString() == "metricFindQuery" {
+		fromRaw, err := strconv.ParseInt(tsdbReq.TimeRange.FromRaw, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		from := time.Unix(fromRaw/1000, fromRaw%1000*1000*1000)
+		toRaw, err := strconv.ParseInt(tsdbReq.TimeRange.ToRaw, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
+		r, err := t.metricFindQuery(ctx, modelJson, from, to)
+		if err != nil {
+			return nil, err
+		}
+		response.Results = append(response.Results, r)
+		return response, nil
+	}
 
 	targets := make([]Target, 0)
 	for _, query := range tsdbReq.Queries {
@@ -207,4 +233,120 @@ func formatLegend(kv map[string]string, legendFormat string) string {
 	})
 
 	return string(result)
+}
+
+type suggestData struct {
+	Text  string
+	Value string
+}
+
+func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *simplejson.Json, from time.Time, to time.Time) (*datasource.QueryResult, error) {
+	region := parameters.Get("region").MustString()
+	awsCfg := &aws.Config{Region: aws.String(region)}
+	sess, err := session.NewSession(awsCfg)
+	if err != nil {
+		return nil, err
+	}
+	svc := athena.New(sess, awsCfg)
+
+	subtype := parameters.Get("subtype").MustString()
+
+	data := make([]suggestData, 0)
+	switch subtype {
+	case "named_query_names":
+		li := &athena.ListNamedQueriesInput{}
+		lo := &athena.ListNamedQueriesOutput{}
+		err = svc.ListNamedQueriesPages(li,
+			func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
+				lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
+				return !lastPage
+			})
+		if err != nil {
+			return nil, err
+		}
+		for i := 0; i < len(lo.NamedQueryIds); i += 50 {
+			e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+			bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
+			bo, err := svc.BatchGetNamedQuery(bi)
+			if err != nil {
+				return nil, err
+			}
+			for _, q := range bo.NamedQueries {
+				data = append(data, suggestData{Text: *q.Name, Value: *q.Name})
+			}
+		}
+	case "named_query_queries":
+		pattern := parameters.Get("pattern").MustString()
+		r := regexp.MustCompile(pattern)
+		li := &athena.ListNamedQueriesInput{}
+		lo := &athena.ListNamedQueriesOutput{}
+		err = svc.ListNamedQueriesPages(li,
+			func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
+				lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
+				return !lastPage
+			})
+		if err != nil {
+			return nil, err
+		}
+		for i := 0; i < len(lo.NamedQueryIds); i += 50 {
+			e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+			bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
+			bo, err := svc.BatchGetNamedQuery(bi)
+			if err != nil {
+				return nil, err
+			}
+			for _, q := range bo.NamedQueries {
+				if r.MatchString(*q.Name) {
+					data = append(data, suggestData{Text: *q.QueryString, Value: *q.QueryString})
+				}
+			}
+		}
+	case "query_execution_ids":
+		pattern := parameters.Get("pattern").MustString()
+		r := regexp.MustCompile(pattern)
+		// todo: support order and limit
+		li := &athena.ListQueryExecutionsInput{}
+		lo := &athena.ListQueryExecutionsOutput{}
+		err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
+			func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
+				lo.QueryExecutionIds = append(lo.QueryExecutionIds, page.QueryExecutionIds...)
+				return !lastPage
+			})
+		for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
+			e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
+			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
+			bo, err := svc.BatchGetQueryExecution(bi)
+			if err != nil {
+				return nil, err
+			}
+			for _, q := range bo.QueryExecutions {
+				if r.MatchString(*q.Query) {
+					data = append(data, suggestData{Text: *q.QueryExecutionId, Value: *q.QueryExecutionId})
+				}
+			}
+		}
+	}
+
+	table := t.transformToTable(data)
+	return &datasource.QueryResult{
+		RefId:  "metricFindQuery",
+		Tables: []*datasource.Table{table},
+	}, nil
+}
+
+func (t *AwsAthenaDatasource) transformToTable(data []suggestData) *datasource.Table {
+	table := &datasource.Table{
+		Columns: make([]*datasource.TableColumn, 0),
+		Rows:    make([]*datasource.TableRow, 0),
+	}
+	table.Columns = append(table.Columns, &datasource.TableColumn{Name: "text"})
+	table.Columns = append(table.Columns, &datasource.TableColumn{Name: "value"})
+
+	for _, r := range data {
+		row := &datasource.TableRow{}
+		row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_STRING, StringValue: r.Text})
+		row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_STRING, StringValue: r.Value})
+		table.Rows = append(table.Rows, row)
+	}
+	return table
 }
