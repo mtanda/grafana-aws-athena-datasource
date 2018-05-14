@@ -13,4 +13,27 @@
       <div class="gf-form-label gf-form-label--grow"></div>
     </div>
   </div>
+
+  <div class="gf-form-inline">
+    <div class="gf-form">
+      <label class="gf-form-label width-8">Timestamp column</label>
+      <input type="text" class="gf-form-input" ng-model="ctrl.target.timestampColumn" spellcheck='false' data-min-length=0 data-items=1000
+        ng-model-onblur ng-change="ctrl.onChangeInternal()">
+      </input>
+    </div>
+
+    <div class="gf-form">
+      <label class="gf-form-label width-8">Value column</label>
+      <input type="text" class="gf-form-input" ng-model="ctrl.target.valueColumn" spellcheck='false' data-min-length=0 data-items=1000
+        ng-model-onblur ng-change="ctrl.onChangeInternal()">
+      </input>
+    </div>
+
+    <div class="gf-form max-width-26">
+      <label class="gf-form-label width-8">Legend format</label>
+      <input type="text" class="gf-form-input" ng-model="ctrl.target.legendFormat" spellcheck='false' placeholder="legend format"
+        data-min-length=0 data-items=1000 ng-model-onblur ng-change="ctrl.onChangeInternal()">
+      </input>
+    </div>
+  </div>
 </query-editor-row>

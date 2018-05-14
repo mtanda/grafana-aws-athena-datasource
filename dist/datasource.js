@@ -37,7 +37,7 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
       }();
 
       _export("AwsAthenaDatasource", AwsAthenaDatasource = function () {
-        function AwsAthenaDatasource(instanceSettings, $q, backendSrv, templateSrv) {
+        function AwsAthenaDatasource(instanceSettings, $q, backendSrv, templateSrv, timeSrv) {
           _classCallCheck(this, AwsAthenaDatasource);
 
           this.type = instanceSettings.type;
@@ -48,6 +48,7 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
           this.q = $q;
           this.backendSrv = backendSrv;
           this.templateSrv = templateSrv;
+          this.timeSrv = timeSrv;
         }
 
         _createClass(AwsAthenaDatasource, [{
@@ -114,8 +115,12 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
                 refId: target.refId,
                 hide: target.hide,
                 datasourceId: _this.id,
-                queryType: target.type || 'timeserie',
+                queryType: 'timeSeriesQuery',
+                format: target.type || 'timeserie',
                 region: target.region || _this.defaultRegion,
+                timestampColumn: target.timestampColumn,
+                valueColumn: target.valueColumn,
+                legendFormat: target.legendFormat || '',
                 input: {
                   queryExecutionId: _this.templateSrv.replace(target.queryExecutionId, options.scopedVars)
                 }
@@ -124,6 +129,74 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
 
             options.targets = targets;
             return options;
+          }
+        }, {
+          key: "metricFindQuery",
+          value: function metricFindQuery(query) {
+            var region = void 0;
+
+            var namedQueryNamesQuery = query.match(/^named_query_names\(([^\)]+?)\)/);
+            if (namedQueryNamesQuery) {
+              region = namedQueryNamesQuery[1];
+              return this.doMetricQueryRequest('named_query_names', {
+                region: this.templateSrv.replace(region)
+              });
+            }
+
+            var namedQueryQueryQuery = query.match(/^named_query_queries\(([^,]+?),\s?(.+)\)/);
+            if (namedQueryQueryQuery) {
+              region = namedQueryQueryQuery[1];
+              var pattern = namedQueryQueryQuery[2];
+              return this.doMetricQueryRequest('named_query_queries', {
+                region: this.templateSrv.replace(region),
+                pattern: this.templateSrv.replace(pattern, {}, 'regex')
+              });
+            }
+
+            var queryExecutionIdsQuery = query.match(/^query_execution_ids\(([^,]+?),\s?(.+)\)/);
+            if (queryExecutionIdsQuery) {
+              region = queryExecutionIdsQuery[1];
+              var _pattern = queryExecutionIdsQuery[2];
+              return this.doMetricQueryRequest('query_execution_ids', {
+                region: this.templateSrv.replace(region),
+                pattern: this.templateSrv.replace(_pattern, {}, 'regex')
+              });
+            }
+
+            return this.$q.when([]);
+          }
+        }, {
+          key: "doMetricQueryRequest",
+          value: function doMetricQueryRequest(subtype, parameters) {
+            var _this2 = this;
+
+            var range = this.timeSrv.timeRange();
+            return this.backendSrv.datasourceRequest({
+              url: '/api/tsdb/query',
+              method: 'POST',
+              data: {
+                from: range.from.valueOf().toString(),
+                to: range.to.valueOf().toString(),
+                queries: [_.extend({
+                  refId: 'metricFindQuery',
+                  datasourceId: this.id,
+                  queryType: 'metricFindQuery',
+                  subtype: subtype
+                }, parameters)]
+              }
+            }).then(function (r) {
+              return _this2.transformSuggestDataFromTable(r.data);
+            });
+          }
+        }, {
+          key: "transformSuggestDataFromTable",
+          value: function transformSuggestDataFromTable(suggestData) {
+            return _.map(suggestData.results['metricFindQuery'].tables[0].rows, function (v) {
+              return {
+                text: v[0],
+                value: v[1]
+              };
+            });
           }
         }]);
 

@@ -69,6 +69,9 @@ System.register(['app/plugins/sdk'], function (_export, _context) {
           _this.scope = $scope;
           _this.target.type = _this.target.type || 'timeserie';
           _this.target.region = _this.target.region || '';
+          _this.target.timestampColumn = _this.target.timestampColumn || '';
+          _this.target.valueColumn = _this.target.valueColumn || '';
+          _this.target.legendFormat = _this.target.legendFormat || '';
           _this.target.queryExecutionId = _this.target.queryExecutionId || '';
           return _this;
         }
