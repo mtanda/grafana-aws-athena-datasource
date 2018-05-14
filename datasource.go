@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -304,7 +305,7 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *s
 	case "query_execution_ids":
 		pattern := parameters.Get("pattern").MustString()
 		r := regexp.MustCompile(pattern)
-		// todo: support order and limit
+		limit := parameters.Get("limit").MustInt()
 		li := &athena.ListQueryExecutionsInput{}
 		lo := &athena.ListQueryExecutionsOutput{}
 		err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
@@ -312,6 +313,7 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *s
 				lo.QueryExecutionIds = append(lo.QueryExecutionIds, page.QueryExecutionIds...)
 				return !lastPage
 			})
+		fbo := make([]*athena.QueryExecution, 0)
 		for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
 			e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
 			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
@@ -327,9 +329,16 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *s
 					continue
 				}
 				if r.MatchString(*q.Query) {
-					data = append(data, suggestData{Text: *q.QueryExecutionId, Value: *q.QueryExecutionId})
+					fbo = append(fbo, q)
 				}
 			}
+		}
+		sort.Slice(fbo, func(i, j int) bool {
+			return fbo[i].Status.CompletionDateTime.After(*fbo[j].Status.CompletionDateTime)
+		})
+		limit = int(math.Min(float64(limit), float64(len(fbo))))
+		for _, q := range fbo[0:limit] {
+			data = append(data, suggestData{Text: *q.QueryExecutionId, Value: *q.QueryExecutionId})
 		}
 	}
 
