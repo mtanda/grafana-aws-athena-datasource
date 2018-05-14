@@ -153,12 +153,14 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
               });
             }
 
-            var queryExecutionIdsQuery = query.match(/^query_execution_ids\(([^,]+?),\s?(.+)\)/);
+            var queryExecutionIdsQuery = query.match(/^query_execution_ids\(([^,]+?),\s?([^,]+?),\s?(.+)\)/);
             if (queryExecutionIdsQuery) {
               region = queryExecutionIdsQuery[1];
-              var _pattern = queryExecutionIdsQuery[2];
+              var limit = queryExecutionIdsQuery[2];
+              var _pattern = queryExecutionIdsQuery[3];
               return this.doMetricQueryRequest('query_execution_ids', {
                 region: this.templateSrv.replace(region),
+                limit: parseInt(this.templateSrv.replace(limit), 10),
                 pattern: this.templateSrv.replace(_pattern, {}, 'regex')
               });
             }
