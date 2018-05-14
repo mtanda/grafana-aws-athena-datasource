@@ -320,6 +320,12 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *s
 				return nil, err
 			}
 			for _, q := range bo.QueryExecutions {
+				if *q.Status.State != "SUCCEEDED" {
+					continue
+				}
+				if (*q.Status.CompletionDateTime).After(to) {
+					continue
+				}
 				if r.MatchString(*q.Query) {
 					data = append(data, suggestData{Text: *q.QueryExecutionId, Value: *q.QueryExecutionId})
 				}
