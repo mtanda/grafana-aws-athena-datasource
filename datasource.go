@@ -51,17 +51,17 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 	if err != nil {
 		return nil, err
 	}
+	fromRaw, err := strconv.ParseInt(tsdbReq.TimeRange.FromRaw, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	from := time.Unix(fromRaw/1000, fromRaw%1000*1000*1000)
+	toRaw, err := strconv.ParseInt(tsdbReq.TimeRange.ToRaw, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 	if modelJson.Get("queryType").MustString() == "metricFindQuery" {
-		fromRaw, err := strconv.ParseInt(tsdbReq.TimeRange.FromRaw, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		from := time.Unix(fromRaw/1000, fromRaw%1000*1000*1000)
-		toRaw, err := strconv.ParseInt(tsdbReq.TimeRange.ToRaw, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 		r, err := t.metricFindQuery(ctx, modelJson, from, to)
 		if err != nil {
 			return nil, err
@@ -94,13 +94,13 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 
 		switch target.Format {
 		case "timeserie":
-			r, err := parseTimeSeriesResponse(resp, target.RefId, target.TimestampColumn, target.ValueColumn, target.LegendFormat)
+			r, err := parseTimeSeriesResponse(resp, target.RefId, from, to, target.TimestampColumn, target.ValueColumn, target.LegendFormat)
 			if err != nil {
 				return nil, err
 			}
 			response.Results = append(response.Results, r)
 		case "table":
-			r, err := parseTableResponse(resp, target.RefId)
+			r, err := parseTableResponse(resp, target.RefId, from, to, target.TimestampColumn)
 			if err != nil {
 				return nil, err
 			}
@@ -111,14 +111,15 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 	return response, nil
 }
 
-func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, timestampColumn string, valueColumn string, legendFormat string) (*datasource.QueryResult, error) {
+func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, valueColumn string, legendFormat string) (*datasource.QueryResult, error) {
 	series := make(map[string]*datasource.TimeSeries)
 
-	var t time.Time
-	var timestamp int64
-	var value float64
-	var err error
 	for i, r := range resp.ResultSet.Rows {
+		var t time.Time
+		var timestamp int64
+		var value float64
+		var err error
+
 		if i == 0 {
 			continue // skip header
 		}
@@ -143,6 +144,10 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, t
 			}
 		}
 
+		if !t.IsZero() && (t.Before(from) || t.After(to)) {
+			continue // out of range data
+		}
+
 		name := formatLegend(kv, legendFormat)
 		if (series[name]) == nil {
 			series[name] = &datasource.TimeSeries{Name: name}
@@ -165,7 +170,7 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, t
 	}, nil
 }
 
-func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string) (*datasource.QueryResult, error) {
+func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string) (*datasource.QueryResult, error) {
 	table := &datasource.Table{}
 
 	for _, c := range resp.ResultSet.ResultSetMetadata.ColumnInfo {
@@ -176,8 +181,18 @@ func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string) (*data
 			continue // skip header
 		}
 
+		var timestamp time.Time
+		var err error
 		row := &datasource.TableRow{}
 		for j, d := range r.Data {
+			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
+			if columnName == timestampColumn {
+				timestamp, err = time.Parse(time.RFC3339Nano, *d.VarCharValue)
+				if err != nil {
+					return nil, err
+				}
+			}
+
 			if d == nil || d.VarCharValue == nil {
 				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_NULL})
 				continue
@@ -204,6 +219,11 @@ func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string) (*data
 				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_STRING, StringValue: *d.VarCharValue})
 			}
 		}
+
+		if !timestamp.IsZero() && (timestamp.Before(from) || timestamp.After(to)) {
+			continue // out of range data
+		}
+
 		table.Rows = append(table.Rows, row)
 	}
 
