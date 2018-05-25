@@ -38,10 +38,24 @@ type Target struct {
 
 var (
 	legendFormatPattern *regexp.Regexp
+	clientCache         = make(map[string]*athena.Athena)
 )
 
 func init() {
 	legendFormatPattern = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
+}
+
+func (t *AwsAthenaDatasource) GetClient(region string) (*athena.Athena, error) {
+	if client, ok := clientCache[region]; ok {
+		return client, nil
+	}
+	cfg := &aws.Config{Region: aws.String(region)}
+	sess, err := session.NewSession(cfg)
+	if err != nil {
+		return nil, err
+	}
+	clientCache[region] = athena.New(sess, cfg)
+	return clientCache[region], nil
 }
 
 func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.DatasourceRequest) (*datasource.DatasourceResponse, error) {
@@ -80,12 +94,10 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 	}
 	to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 	for _, target := range targets {
-		awsCfg := &aws.Config{Region: aws.String(target.Region)}
-		sess, err := session.NewSession(awsCfg)
+		svc, err := t.GetClient(target.Region)
 		if err != nil {
 			return nil, err
 		}
-		svc := athena.New(sess, awsCfg)
 
 		resp, err := svc.GetQueryResults(&target.Input)
 		if err != nil {
@@ -263,12 +275,10 @@ type suggestData struct {
 
 func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *simplejson.Json, timeRange *datasource.TimeRange) (*datasource.QueryResult, error) {
 	region := parameters.Get("region").MustString()
-	awsCfg := &aws.Config{Region: aws.String(region)}
-	sess, err := session.NewSession(awsCfg)
+	svc, err := t.GetClient(region)
 	if err != nil {
 		return nil, err
 	}
-	svc := athena.New(sess, awsCfg)
 
 	subtype := parameters.Get("subtype").MustString()
 
