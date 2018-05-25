@@ -28,7 +28,13 @@ export class AwsAthenaDatasource {
   }
 
   testDatasource() {
-    return this.q.when({ status: "success", message: "Data source is working", title: "Success" });
+    return this.doMetricQueryRequest('named_query_names', {
+      region: this.defaultRegion,
+    }).then(res => {
+      return this.q.when({ status: "success", message: "Data source is working", title: "Success" });
+    }).catch(err => {
+      return { status: "error", message: err.message, title: "Error" };
+    });
   }
 
   doRequest(options) {

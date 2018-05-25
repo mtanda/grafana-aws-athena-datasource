@@ -51,18 +51,8 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 	if err != nil {
 		return nil, err
 	}
-	fromRaw, err := strconv.ParseInt(tsdbReq.TimeRange.FromRaw, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	from := time.Unix(fromRaw/1000, fromRaw%1000*1000*1000)
-	toRaw, err := strconv.ParseInt(tsdbReq.TimeRange.ToRaw, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 	if modelJson.Get("queryType").MustString() == "metricFindQuery" {
-		r, err := t.metricFindQuery(ctx, modelJson, from, to)
+		r, err := t.metricFindQuery(ctx, modelJson, tsdbReq.TimeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -79,6 +69,16 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 		targets = append(targets, target)
 	}
 
+	fromRaw, err := strconv.ParseInt(tsdbReq.TimeRange.FromRaw, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	from := time.Unix(fromRaw/1000, fromRaw%1000*1000*1000)
+	toRaw, err := strconv.ParseInt(tsdbReq.TimeRange.ToRaw, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 	for _, target := range targets {
 		awsCfg := &aws.Config{Region: aws.String(target.Region)}
 		sess, err := session.NewSession(awsCfg)
@@ -261,7 +261,7 @@ type suggestData struct {
 	Value string
 }
 
-func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *simplejson.Json, from time.Time, to time.Time) (*datasource.QueryResult, error) {
+func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *simplejson.Json, timeRange *datasource.TimeRange) (*datasource.QueryResult, error) {
 	region := parameters.Get("region").MustString()
 	awsCfg := &aws.Config{Region: aws.String(region)}
 	sess, err := session.NewSession(awsCfg)
@@ -323,6 +323,12 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *s
 			}
 		}
 	case "query_execution_ids":
+		toRaw, err := strconv.ParseInt(timeRange.ToRaw, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
+
 		pattern := parameters.Get("pattern").MustString()
 		r := regexp.MustCompile(pattern)
 		limit := parameters.Get("limit").MustInt()
