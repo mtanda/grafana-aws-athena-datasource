@@ -59,20 +59,42 @@ func (t *AwsAthenaDatasource) GetClient(region string) (*athena.Athena, error) {
 }
 
 func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.DatasourceRequest) (*datasource.DatasourceResponse, error) {
-	response := &datasource.DatasourceResponse{}
-
 	modelJson, err := simplejson.NewJson([]byte(tsdbReq.Queries[0].ModelJson))
 	if err != nil {
 		return nil, err
 	}
+
 	if modelJson.Get("queryType").MustString() == "metricFindQuery" {
-		r, err := t.metricFindQuery(ctx, modelJson, tsdbReq.TimeRange)
+		response, err := t.metricFindQuery(ctx, modelJson, tsdbReq.TimeRange)
 		if err != nil {
-			return nil, err
+			return &datasource.DatasourceResponse{
+				Results: []*datasource.QueryResult{
+					&datasource.QueryResult{
+						RefId: "metricFindQuery",
+						Error: err.Error(),
+					},
+				},
+			}, nil
 		}
-		response.Results = append(response.Results, r)
 		return response, nil
 	}
+
+	response, err := t.handleQuery(tsdbReq)
+	if err != nil {
+		return &datasource.DatasourceResponse{
+			Results: []*datasource.QueryResult{
+				&datasource.QueryResult{
+					Error: err.Error(),
+				},
+			},
+		}, nil
+	}
+
+	return response, nil
+}
+
+func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest) (*datasource.DatasourceResponse, error) {
+	response := &datasource.DatasourceResponse{}
 
 	targets := make([]Target, 0)
 	for _, query := range tsdbReq.Queries {
@@ -273,7 +295,7 @@ type suggestData struct {
 	Value string
 }
 
-func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *simplejson.Json, timeRange *datasource.TimeRange) (*datasource.QueryResult, error) {
+func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *simplejson.Json, timeRange *datasource.TimeRange) (*datasource.DatasourceResponse, error) {
 	region := parameters.Get("region").MustString()
 	svc, err := t.GetClient(region)
 	if err != nil {
@@ -379,9 +401,14 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *s
 	}
 
 	table := t.transformToTable(data)
-	return &datasource.QueryResult{
-		RefId:  "metricFindQuery",
-		Tables: []*datasource.Table{table},
+
+	return &datasource.DatasourceResponse{
+		Results: []*datasource.QueryResult{
+			&datasource.QueryResult{
+				RefId:  "metricFindQuery",
+				Tables: []*datasource.Table{table},
+			},
+		},
 	}, nil
 }
 
