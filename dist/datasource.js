@@ -1,6 +1,6 @@
-"use strict";
+'use strict';
 
-System.register(["lodash", "app/core/table_model"], function (_export, _context) {
+System.register(['lodash', 'app/core/table_model'], function (_export, _context) {
   "use strict";
 
   var _, TableModel, _createClass, AwsAthenaDatasource;
@@ -36,7 +36,7 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
         };
       }();
 
-      _export("AwsAthenaDatasource", AwsAthenaDatasource = function () {
+      _export('AwsAthenaDatasource', AwsAthenaDatasource = function () {
         function AwsAthenaDatasource(instanceSettings, $q, backendSrv, templateSrv, timeSrv) {
           _classCallCheck(this, AwsAthenaDatasource);
 
@@ -52,7 +52,7 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
         }
 
         _createClass(AwsAthenaDatasource, [{
-          key: "query",
+          key: 'query',
           value: function query(options) {
             var query = this.buildQueryParameters(options);
             query.targets = query.targets.filter(function (t) {
@@ -68,12 +68,20 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
             });
           }
         }, {
-          key: "testDatasource",
+          key: 'testDatasource',
           value: function testDatasource() {
-            return this.q.when({ status: "success", message: "Data source is working", title: "Success" });
+            var _this = this;
+
+            return this.doMetricQueryRequest('named_query_names', {
+              region: this.defaultRegion
+            }).then(function (res) {
+              return _this.q.when({ status: "success", message: "Data source is working", title: "Success" });
+            }).catch(function (err) {
+              return { status: "error", message: err.message, title: "Error" };
+            });
           }
         }, {
-          key: "doRequest",
+          key: 'doRequest',
           value: function doRequest(options) {
             return this.backendSrv.datasourceRequest({
               url: '/api/tsdb/query',
@@ -106,23 +114,23 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
             });
           }
         }, {
-          key: "buildQueryParameters",
+          key: 'buildQueryParameters',
           value: function buildQueryParameters(options) {
-            var _this = this;
+            var _this2 = this;
 
             var targets = _.map(options.targets, function (target) {
               return {
                 refId: target.refId,
                 hide: target.hide,
-                datasourceId: _this.id,
+                datasourceId: _this2.id,
                 queryType: 'timeSeriesQuery',
                 format: target.type || 'timeserie',
-                region: target.region || _this.defaultRegion,
+                region: target.region || _this2.defaultRegion,
                 timestampColumn: target.timestampColumn,
                 valueColumn: target.valueColumn,
                 legendFormat: target.legendFormat || '',
                 input: {
-                  queryExecutionId: _this.templateSrv.replace(target.queryExecutionId, options.scopedVars)
+                  queryExecutionId: _this2.templateSrv.replace(target.queryExecutionId, options.scopedVars)
                 }
               };
             });
@@ -131,7 +139,7 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
             return options;
           }
         }, {
-          key: "metricFindQuery",
+          key: 'metricFindQuery',
           value: function metricFindQuery(query) {
             var region = void 0;
 
@@ -168,9 +176,9 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
             return this.$q.when([]);
           }
         }, {
-          key: "doMetricQueryRequest",
+          key: 'doMetricQueryRequest',
           value: function doMetricQueryRequest(subtype, parameters) {
-            var _this2 = this;
+            var _this3 = this;
 
             var range = this.timeSrv.timeRange();
             return this.backendSrv.datasourceRequest({
@@ -187,11 +195,11 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
                 }, parameters)]
               }
             }).then(function (r) {
-              return _this2.transformSuggestDataFromTable(r.data);
+              return _this3.transformSuggestDataFromTable(r.data);
             });
           }
         }, {
-          key: "transformSuggestDataFromTable",
+          key: 'transformSuggestDataFromTable',
           value: function transformSuggestDataFromTable(suggestData) {
             return _.map(suggestData.results['metricFindQuery'].tables[0].rows, function (v) {
               return {
@@ -205,7 +213,7 @@ System.register(["lodash", "app/core/table_model"], function (_export, _context)
         return AwsAthenaDatasource;
       }());
 
-      _export("AwsAthenaDatasource", AwsAthenaDatasource);
+      _export('AwsAthenaDatasource', AwsAthenaDatasource);
     }
   };
 });
