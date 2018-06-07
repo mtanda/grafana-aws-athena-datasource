@@ -125,7 +125,7 @@ System.register(['lodash', 'app/core/table_model'], function (_export, _context)
                 datasourceId: _this2.id,
                 queryType: 'timeSeriesQuery',
                 format: target.type || 'timeserie',
-                region: target.region || _this2.defaultRegion,
+                region: _this2.templateSrv.replace(target.region, options.scopedVars) || _this2.defaultRegion,
                 timestampColumn: target.timestampColumn,
                 valueColumn: target.valueColumn,
                 legendFormat: target.legendFormat || '',
