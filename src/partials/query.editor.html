@@ -16,6 +16,13 @@
 
   <div class="gf-form-inline">
     <div class="gf-form">
+      <label class="gf-form-label width-8">Region</label>
+      <input type="text" class="gf-form-input" ng-model="ctrl.target.region" spellcheck='false' data-min-length=0 data-items=1000
+        ng-model-onblur ng-change="ctrl.onChangeInternal()">
+      </input>
+    </div>
+
+    <div class="gf-form">
       <label class="gf-form-label width-8">Timestamp column</label>
       <input type="text" class="gf-form-input" ng-model="ctrl.target.timestampColumn" spellcheck='false' data-min-length=0 data-items=1000
         ng-model-onblur ng-change="ctrl.onChangeInternal()">
