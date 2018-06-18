@@ -9,11 +9,11 @@ So, please post query outside of this plugin.
 ### Setup
 Allow following API for EC2 instance, and run Grafana on the EC2 instance.
 
-- GetQueryResults
-- BatchGetNamedQuery
-- BatchGetQueryExecution
-- ListNamedQueries
-- ListQueryExecutions
+- athena:GetQueryResults
+- athena:BatchGetNamedQuery
+- athena:BatchGetQueryExecution
+- athena:ListNamedQueries
+- athena:ListQueryExecutions
 
 ### Templating
 
