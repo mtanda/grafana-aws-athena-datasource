@@ -12,8 +12,6 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/athena"
 
 	"github.com/grafana/grafana/pkg/components/simplejson"
@@ -45,19 +43,6 @@ func init() {
 	legendFormatPattern = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
 }
 
-func (t *AwsAthenaDatasource) GetClient(region string) (*athena.Athena, error) {
-	if client, ok := clientCache[region]; ok {
-		return client, nil
-	}
-	cfg := &aws.Config{Region: aws.String(region)}
-	sess, err := session.NewSession(cfg)
-	if err != nil {
-		return nil, err
-	}
-	clientCache[region] = athena.New(sess, cfg)
-	return clientCache[region], nil
-}
-
 func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.DatasourceRequest) (*datasource.DatasourceResponse, error) {
 	modelJson, err := simplejson.NewJson([]byte(tsdbReq.Queries[0].ModelJson))
 	if err != nil {
@@ -65,11 +50,11 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 	}
 
 	if modelJson.Get("queryType").MustString() == "metricFindQuery" {
-		response, err := t.metricFindQuery(ctx, modelJson, tsdbReq.TimeRange)
+		response, err := t.metricFindQuery(ctx, tsdbReq, modelJson, tsdbReq.TimeRange)
 		if err != nil {
 			return &datasource.DatasourceResponse{
 				Results: []*datasource.QueryResult{
-					&datasource.QueryResult{
+					{
 						RefId: "metricFindQuery",
 						Error: err.Error(),
 					},
@@ -83,7 +68,7 @@ func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.Dat
 	if err != nil {
 		return &datasource.DatasourceResponse{
 			Results: []*datasource.QueryResult{
-				&datasource.QueryResult{
+				{
 					Error: err.Error(),
 				},
 			},
@@ -116,7 +101,7 @@ func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest)
 	}
 	to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 	for _, target := range targets {
-		svc, err := t.GetClient(target.Region)
+		svc, err := t.getClient(tsdbReq.Datasource, target.Region)
 		if err != nil {
 			return nil, err
 		}
@@ -295,9 +280,9 @@ type suggestData struct {
 	Value string
 }
 
-func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *simplejson.Json, timeRange *datasource.TimeRange) (*datasource.DatasourceResponse, error) {
+func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *datasource.DatasourceRequest, parameters *simplejson.Json, timeRange *datasource.TimeRange) (*datasource.DatasourceResponse, error) {
 	region := parameters.Get("region").MustString()
-	svc, err := t.GetClient(region)
+	svc, err := t.getClient(tsdbReq.Datasource, region)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +389,7 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, parameters *s
 
 	return &datasource.DatasourceResponse{
 		Results: []*datasource.QueryResult{
-			&datasource.QueryResult{
+			{
 				RefId:  "metricFindQuery",
 				Tables: []*datasource.Table{table},
 			},
