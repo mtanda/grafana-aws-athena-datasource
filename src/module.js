@@ -1,8 +1,6 @@
 import { AwsAthenaDatasource } from './datasource';
 import { AwsAthenaDatasourceQueryCtrl } from './query_ctrl';
-
-class AwsAthenaDatasourceConfigCtrl { }
-AwsAthenaDatasourceConfigCtrl.templateUrl = 'partials/config.html';
+import { AwsAthenaDatasourceConfigCtrl } from './config_ctrl';
 
 export {
   AwsAthenaDatasource as Datasource,
