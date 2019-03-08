@@ -63,17 +63,17 @@ export class AwsAthenaDatasource {
         if (!_.isEmpty(r.series)) {
           _.forEach(r.series, s => {
             res.push({ target: s.name, datapoints: s.points });
-          })
+          });
         }
         if (!_.isEmpty(r.tables)) {
           _.forEach(r.tables, t => {
-            let table = new TableModel()
-            table.columns = t.columns
-            table.rows = t.rows
+            let table = new TableModel();
+            table.columns = t.columns;
+            table.rows = t.rows;
             res.push(table);
-          })
+          });
         }
-      })
+      });
 
       result.data = res;
       return result;
