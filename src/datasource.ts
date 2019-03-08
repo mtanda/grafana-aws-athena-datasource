@@ -1,7 +1,18 @@
 import _ from "lodash";
-import TableModel from 'app/core/table_model';
+import TableModel from 'grafana/app/core/table_model';
 
 export class AwsAthenaDatasource {
+  type: string;
+  url: string;
+  name: string;
+  id: string;
+  defaultRegion: string;
+  q: any;
+  $q: any;
+  backendSrv: any;
+  templateSrv: any;
+  timeSrv: any;
+
   constructor(instanceSettings, $q, backendSrv, templateSrv, timeSrv) {
     this.type = instanceSettings.type;
     this.url = instanceSettings.url;
@@ -124,7 +135,7 @@ export class AwsAthenaDatasource {
       });
     }
 
-    return this.$q.when([]);
+    return this.q.when([]);
   }
 
   doMetricQueryRequest(subtype, parameters) {

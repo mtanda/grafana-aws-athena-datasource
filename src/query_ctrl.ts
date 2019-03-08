@@ -1,6 +1,11 @@
-import { QueryCtrl } from 'app/plugins/sdk';
+import { QueryCtrl } from 'grafana/app/plugins/sdk';
 
 export class AwsAthenaDatasourceQueryCtrl extends QueryCtrl {
+  scope: any;
+  target: any;
+  panelCtrl: any;
+  static templateUrl = 'partials/query.editor.html';
+
   constructor($scope, $injector) {
     super($scope, $injector);
 
@@ -18,4 +23,3 @@ export class AwsAthenaDatasourceQueryCtrl extends QueryCtrl {
   }
 }
 
-AwsAthenaDatasourceQueryCtrl.templateUrl = 'partials/query.editor.html';

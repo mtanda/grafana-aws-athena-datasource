@@ -1,6 +1,13 @@
 import _ from 'lodash';
 
 export class AwsAthenaDatasourceConfigCtrl {
+  current: any;
+  accessKeyExist: any;
+  secretKeyExist: any;
+  datasourceSrv: any;
+  authTypes: any;
+  static templateUrl = 'partials/config.html';
+
   /** @ngInject */
   constructor($scope, datasourceSrv) {
     this.current.jsonData.authType = this.current.jsonData.authType || 'credentials';
@@ -23,5 +30,3 @@ export class AwsAthenaDatasourceConfigCtrl {
     this.secretKeyExist = false;
   }
 }
-
-AwsAthenaDatasourceConfigCtrl.templateUrl = 'partials/config.html';
