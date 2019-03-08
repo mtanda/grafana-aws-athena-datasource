@@ -14,8 +14,7 @@
     "lodash": "^4.17.4",
     "moment": "^2.22.1",
     "rxjs": "^6.2.1",
-    "rxjs-compat": "^6.2.1",
-    "scriptjs": "^2.5.9"
+    "rxjs-compat": "^6.2.1"
   },
   "devDependencies": {
     "@types/ace": "0.0.40",
