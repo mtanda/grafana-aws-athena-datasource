@@ -1,5 +1,3 @@
-import _ from 'lodash';
-
 export class AwsAthenaDatasourceConfigCtrl {
   current: any;
   accessKeyExist: any;
