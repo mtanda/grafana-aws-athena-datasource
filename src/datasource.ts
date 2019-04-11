@@ -87,7 +87,7 @@ export class AwsAthenaDatasource {
         hide: target.hide,
         datasourceId: this.id,
         queryType: 'timeSeriesQuery',
-        format: target.type || 'timeserie',
+        format: target.format || 'timeserie',
         region: this.templateSrv.replace(target.region, options.scopedVars) || this.defaultRegion,
         timestampColumn: target.timestampColumn,
         valueColumn: target.valueColumn,
