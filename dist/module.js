@@ -261,7 +261,7 @@ function () {
         hide: target.hide,
         datasourceId: _this.id,
         queryType: 'timeSeriesQuery',
-        format: target.type || 'timeserie',
+        format: target.format || 'timeserie',
         region: _this.templateSrv.replace(target.region, options.scopedVars) || _this.defaultRegion,
         timestampColumn: target.timestampColumn,
         valueColumn: target.valueColumn,
@@ -427,7 +427,7 @@ function (_super) {
     var _this = _super.call(this, $scope, $injector) || this;
 
     _this.scope = $scope;
-    _this.target.type = _this.target.type || 'timeserie';
+    _this.target.format = _this.target.format || _this.target.type || 'timeserie';
     _this.target.region = _this.target.region || '';
     _this.target.timestampColumn = _this.target.timestampColumn || '';
     _this.target.valueColumn = _this.target.valueColumn || '';
