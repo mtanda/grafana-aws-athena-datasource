@@ -227,7 +227,10 @@ function () {
     }).then(function (result) {
       var res = [];
 
-      _lodash2.default.forEach(result.data.results, function (r) {
+      for (var _i = 0, _a = options.data.targets; _i < _a.length; _i++) {
+        var query = _a[_i];
+        var r = result.data.results[query.refId];
+
         if (!_lodash2.default.isEmpty(r.series)) {
           _lodash2.default.forEach(r.series, function (s) {
             res.push({
@@ -245,7 +248,7 @@ function () {
             res.push(table);
           });
         }
-      });
+      }
 
       result.data = res;
       return result;
