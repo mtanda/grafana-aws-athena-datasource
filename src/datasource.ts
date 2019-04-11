@@ -59,7 +59,8 @@ export class AwsAthenaDatasource {
       }
     }).then(result => {
       let res: any = [];
-      _.forEach(result.data.results, r => {
+      for (const query of options.data.targets) {
+        const r = result.data.results[query.refId];
         if (!_.isEmpty(r.series)) {
           _.forEach(r.series, s => {
             res.push({ target: s.name, datapoints: s.points });
@@ -73,7 +74,7 @@ export class AwsAthenaDatasource {
             res.push(table);
           });
         }
-      });
+      }
 
       result.data = res;
       return result;
