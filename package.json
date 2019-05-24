@@ -17,6 +17,8 @@
     "rxjs-compat": "^6.2.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.4.5",
+    "@babel/preset-env": "^7.4.5",
     "@types/ace": "0.0.40",
     "@types/grafana": "https://git@github.com/CorpGlory/types-grafana.git",
     "@types/jest": "^22.2.3",

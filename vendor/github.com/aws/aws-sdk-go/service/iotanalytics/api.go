@@ -621,6 +621,8 @@ func (c *IoTAnalytics) CreatePipelineRequest(input *CreatePipelineInput) (req *r
 //
 // Creates a pipeline. A pipeline consumes messages from one or more channels
 // and allows you to process the messages before storing them in a data store.
+// You must specify both a channel and a datastore activity and, optionally,
+// as many as 23 additional activities in the pipelineActivities array.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -3377,7 +3379,9 @@ func (c *IoTAnalytics) UpdatePipelineRequest(input *UpdatePipelineInput) (req *r
 
 // UpdatePipeline API operation for AWS IoT Analytics.
 //
-// Updates the settings of a pipeline.
+// Updates the settings of a pipeline. You must specify both a channel and a
+// datastore activity and, optionally, as many as 23 additional activities in
+// the pipelineActivities array.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -4245,10 +4249,11 @@ type CreateDatasetInput struct {
 	// DatasetName is a required field
 	DatasetName *string `locationName:"datasetName" min:"1" type:"string" required:"true"`
 
-	// [Optional] How long, in days, message data is kept for the data set. If not
-	// given or set to null, the latest version of the dataset content plus the
-	// latest succeeded version (if they are different) are retained for at most
-	// 90 days.
+	// [Optional] How long, in days, versions of data set contents are kept for
+	// the data set. If not specified or set to null, versions of data set contents
+	// are retained for at most 90 days. The number of versions of data set contents
+	// retained is determined by the versioningConfiguration parameter. (For more
+	// information, see https://docs.aws.amazon.com/iotanalytics/latest/userguide/getting-started.html#aws-iot-analytics-dataset-versions)
 	RetentionPeriod *RetentionPeriod `locationName:"retentionPeriod" type:"structure"`
 
 	// Metadata which can be used to manage the data set.
@@ -4258,6 +4263,12 @@ type CreateDatasetInput struct {
 	// a specified time interval or when another data set's contents are created.
 	// The list of triggers can be empty or contain up to five DataSetTrigger objects.
 	Triggers []*DatasetTrigger `locationName:"triggers" type:"list"`
+
+	// [Optional] How many versions of data set contents are kept. If not specified
+	// or set to null, only the latest version plus the latest succeeded version
+	// (if they are different) are kept for the time period specified by the "retentionPeriod"
+	// parameter. (For more information, see https://docs.aws.amazon.com/iotanalytics/latest/userguide/getting-started.html#aws-iot-analytics-dataset-versions)
+	VersioningConfiguration *VersioningConfiguration `locationName:"versioningConfiguration" type:"structure"`
 }
 
 // String returns the string representation
@@ -4333,6 +4344,11 @@ func (s *CreateDatasetInput) Validate() error {
 			}
 		}
 	}
+	if s.VersioningConfiguration != nil {
+		if err := s.VersioningConfiguration.Validate(); err != nil {
+			invalidParams.AddNested("VersioningConfiguration", err.(request.ErrInvalidParams))
+		}
+	}
 
 	if invalidParams.Len() > 0 {
 		return invalidParams
@@ -4376,6 +4392,12 @@ func (s *CreateDatasetInput) SetTriggers(v []*DatasetTrigger) *CreateDatasetInpu
 	return s
 }
 
+// SetVersioningConfiguration sets the VersioningConfiguration field's value.
+func (s *CreateDatasetInput) SetVersioningConfiguration(v *VersioningConfiguration) *CreateDatasetInput {
+	s.VersioningConfiguration = v
+	return s
+}
+
 type CreateDatasetOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -4385,7 +4407,7 @@ type CreateDatasetOutput struct {
 	// The name of the data set.
 	DatasetName *string `locationName:"datasetName" min:"1" type:"string"`
 
-	// How long, in days, message data is kept for the data set.
+	// How long, in days, data set contents are kept for the data set.
 	RetentionPeriod *RetentionPeriod `locationName:"retentionPeriod" type:"structure"`
 }
 
@@ -4538,13 +4560,18 @@ func (s *CreateDatastoreOutput) SetRetentionPeriod(v *RetentionPeriod) *CreateDa
 type CreatePipelineInput struct {
 	_ struct{} `type:"structure"`
 
-	// A list of pipeline activities.
-	//
-	// The list can be 1-25 PipelineActivity objects. Activities perform transformations
-	// on your messages, such as removing, renaming, or adding message attributes;
+	// A list of "PipelineActivity" objects. Activities perform transformations
+	// on your messages, such as removing, renaming or adding message attributes;
 	// filtering messages based on attribute values; invoking your Lambda functions
 	// on messages for advanced processing; or performing mathematical transformations
 	// to normalize device data.
+	//
+	// The list can be 2-25 PipelineActivity objects and must contain both a channel
+	// and a datastore activity. Each entry in the list must contain only one activity,
+	// for example:
+	//
+	// pipelineActivities = [ { "channel": { ... } }, { "lambda": { ... } }, ...
+	// ]
 	//
 	// PipelineActivities is a required field
 	PipelineActivities []*PipelineActivity `locationName:"pipelineActivities" min:"1" type:"list" required:"true"`
@@ -4695,6 +4722,12 @@ type Dataset struct {
 	// The "DatasetTrigger" objects that specify when the data set is automatically
 	// updated.
 	Triggers []*DatasetTrigger `locationName:"triggers" type:"list"`
+
+	// [Optional] How many versions of data set contents are kept. If not specified
+	// or set to null, only the latest version plus the latest succeeded version
+	// (if they are different) are kept for the time period specified by the "retentionPeriod"
+	// parameter. (For more information, see https://docs.aws.amazon.com/iotanalytics/latest/userguide/getting-started.html#aws-iot-analytics-dataset-versions)
+	VersioningConfiguration *VersioningConfiguration `locationName:"versioningConfiguration" type:"structure"`
 }
 
 // String returns the string representation
@@ -4758,6 +4791,12 @@ func (s *Dataset) SetStatus(v string) *Dataset {
 // SetTriggers sets the Triggers field's value.
 func (s *Dataset) SetTriggers(v []*DatasetTrigger) *Dataset {
 	s.Triggers = v
+	return s
+}
+
+// SetVersioningConfiguration sets the VersioningConfiguration field's value.
+func (s *Dataset) SetVersioningConfiguration(v *VersioningConfiguration) *Dataset {
+	s.VersioningConfiguration = v
 	return s
 }
 
@@ -4831,6 +4870,7 @@ func (s *DatasetAction) SetQueryAction(v *SqlQueryDatasetAction) *DatasetAction 
 	return s
 }
 
+// Information about the action which automatically creates the data set's contents.
 type DatasetActionSummary struct {
 	_ struct{} `type:"structure"`
 
@@ -4869,6 +4909,9 @@ type DatasetContentDeliveryDestination struct {
 
 	// Configuration information for delivery of data set contents to AWS IoT Events.
 	IotEventsDestinationConfiguration *IotEventsDestinationConfiguration `locationName:"iotEventsDestinationConfiguration" type:"structure"`
+
+	// Configuration information for delivery of data set contents to Amazon S3.
+	S3DestinationConfiguration *S3DestinationConfiguration `locationName:"s3DestinationConfiguration" type:"structure"`
 }
 
 // String returns the string representation
@@ -4889,6 +4932,11 @@ func (s *DatasetContentDeliveryDestination) Validate() error {
 			invalidParams.AddNested("IotEventsDestinationConfiguration", err.(request.ErrInvalidParams))
 		}
 	}
+	if s.S3DestinationConfiguration != nil {
+		if err := s.S3DestinationConfiguration.Validate(); err != nil {
+			invalidParams.AddNested("S3DestinationConfiguration", err.(request.ErrInvalidParams))
+		}
+	}
 
 	if invalidParams.Len() > 0 {
 		return invalidParams
@@ -4899,6 +4947,12 @@ func (s *DatasetContentDeliveryDestination) Validate() error {
 // SetIotEventsDestinationConfiguration sets the IotEventsDestinationConfiguration field's value.
 func (s *DatasetContentDeliveryDestination) SetIotEventsDestinationConfiguration(v *IotEventsDestinationConfiguration) *DatasetContentDeliveryDestination {
 	s.IotEventsDestinationConfiguration = v
+	return s
+}
+
+// SetS3DestinationConfiguration sets the S3DestinationConfiguration field's value.
+func (s *DatasetContentDeliveryDestination) SetS3DestinationConfiguration(v *S3DestinationConfiguration) *DatasetContentDeliveryDestination {
+	s.S3DestinationConfiguration = v
 	return s
 }
 
@@ -6545,6 +6599,69 @@ func (s *GetDatasetContentOutput) SetTimestamp(v time.Time) *GetDatasetContentOu
 	return s
 }
 
+// Configuration information for coordination with the AWS Glue ETL (extract,
+// transform and load) service.
+type GlueConfiguration struct {
+	_ struct{} `type:"structure"`
+
+	// The name of the database in your AWS Glue Data Catalog in which the table
+	// is located. (An AWS Glue Data Catalog database contains Glue Data tables.)
+	//
+	// DatabaseName is a required field
+	DatabaseName *string `locationName:"databaseName" min:"1" type:"string" required:"true"`
+
+	// The name of the table in your AWS Glue Data Catalog which is used to perform
+	// the ETL (extract, transform and load) operations. (An AWS Glue Data Catalog
+	// table contains partitioned data and descriptions of data sources and targets.)
+	//
+	// TableName is a required field
+	TableName *string `locationName:"tableName" min:"1" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s GlueConfiguration) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s GlueConfiguration) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *GlueConfiguration) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "GlueConfiguration"}
+	if s.DatabaseName == nil {
+		invalidParams.Add(request.NewErrParamRequired("DatabaseName"))
+	}
+	if s.DatabaseName != nil && len(*s.DatabaseName) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("DatabaseName", 1))
+	}
+	if s.TableName == nil {
+		invalidParams.Add(request.NewErrParamRequired("TableName"))
+	}
+	if s.TableName != nil && len(*s.TableName) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("TableName", 1))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetDatabaseName sets the DatabaseName field's value.
+func (s *GlueConfiguration) SetDatabaseName(v string) *GlueConfiguration {
+	s.DatabaseName = &v
+	return s
+}
+
+// SetTableName sets the TableName field's value.
+func (s *GlueConfiguration) SetTableName(v string) *GlueConfiguration {
+	s.TableName = &v
+	return s
+}
+
 // Configuration information for delivery of data set contents to AWS IoT Events.
 type IotEventsDestinationConfiguration struct {
 	_ struct{} `type:"structure"`
@@ -8159,6 +8276,100 @@ func (s *RunPipelineActivityOutput) SetPayloads(v [][]byte) *RunPipelineActivity
 	return s
 }
 
+// Configuration information for delivery of data set contents to Amazon S3.
+type S3DestinationConfiguration struct {
+	_ struct{} `type:"structure"`
+
+	// The name of the Amazon S3 bucket to which data set contents are delivered.
+	//
+	// Bucket is a required field
+	Bucket *string `locationName:"bucket" min:"3" type:"string" required:"true"`
+
+	// Configuration information for coordination with the AWS Glue ETL (extract,
+	// transform and load) service.
+	GlueConfiguration *GlueConfiguration `locationName:"glueConfiguration" type:"structure"`
+
+	// The key of the data set contents object. Each object in an Amazon S3 bucket
+	// has a key that is its unique identifier within the bucket (each object in
+	// a bucket has exactly one key).
+	//
+	// Key is a required field
+	Key *string `locationName:"key" min:"1" type:"string" required:"true"`
+
+	// The ARN of the role which grants AWS IoT Analytics permission to interact
+	// with your Amazon S3 and AWS Glue resources.
+	//
+	// RoleArn is a required field
+	RoleArn *string `locationName:"roleArn" min:"20" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s S3DestinationConfiguration) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s S3DestinationConfiguration) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *S3DestinationConfiguration) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "S3DestinationConfiguration"}
+	if s.Bucket == nil {
+		invalidParams.Add(request.NewErrParamRequired("Bucket"))
+	}
+	if s.Bucket != nil && len(*s.Bucket) < 3 {
+		invalidParams.Add(request.NewErrParamMinLen("Bucket", 3))
+	}
+	if s.Key == nil {
+		invalidParams.Add(request.NewErrParamRequired("Key"))
+	}
+	if s.Key != nil && len(*s.Key) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("Key", 1))
+	}
+	if s.RoleArn == nil {
+		invalidParams.Add(request.NewErrParamRequired("RoleArn"))
+	}
+	if s.RoleArn != nil && len(*s.RoleArn) < 20 {
+		invalidParams.Add(request.NewErrParamMinLen("RoleArn", 20))
+	}
+	if s.GlueConfiguration != nil {
+		if err := s.GlueConfiguration.Validate(); err != nil {
+			invalidParams.AddNested("GlueConfiguration", err.(request.ErrInvalidParams))
+		}
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetBucket sets the Bucket field's value.
+func (s *S3DestinationConfiguration) SetBucket(v string) *S3DestinationConfiguration {
+	s.Bucket = &v
+	return s
+}
+
+// SetGlueConfiguration sets the GlueConfiguration field's value.
+func (s *S3DestinationConfiguration) SetGlueConfiguration(v *GlueConfiguration) *S3DestinationConfiguration {
+	s.GlueConfiguration = v
+	return s
+}
+
+// SetKey sets the Key field's value.
+func (s *S3DestinationConfiguration) SetKey(v string) *S3DestinationConfiguration {
+	s.Key = &v
+	return s
+}
+
+// SetRoleArn sets the RoleArn field's value.
+func (s *S3DestinationConfiguration) SetRoleArn(v string) *S3DestinationConfiguration {
+	s.RoleArn = &v
+	return s
+}
+
 type SampleChannelDataInput struct {
 	_ struct{} `type:"structure"`
 
@@ -8261,7 +8472,7 @@ type Schedule struct {
 
 	// The expression that defines when to trigger an update. For more information,
 	// see  Schedule Expressions for Rules (https://docs.aws.amazon.com/AmazonCloudWatch/latest/events/ScheduledEvents.html)
-	// in the Amazon CloudWatch documentation.
+	// in the Amazon CloudWatch Events User Guide.
 	Expression *string `locationName:"expression" type:"string"`
 }
 
@@ -8836,12 +9047,18 @@ type UpdateDatasetInput struct {
 	// DatasetName is a required field
 	DatasetName *string `location:"uri" locationName:"datasetName" min:"1" type:"string" required:"true"`
 
-	// How long, in days, message data is kept for the data set.
+	// How long, in days, data set contents are kept for the data set.
 	RetentionPeriod *RetentionPeriod `locationName:"retentionPeriod" type:"structure"`
 
 	// A list of "DatasetTrigger" objects. The list can be empty or can contain
 	// up to five DataSetTrigger objects.
 	Triggers []*DatasetTrigger `locationName:"triggers" type:"list"`
+
+	// [Optional] How many versions of data set contents are kept. If not specified
+	// or set to null, only the latest version plus the latest succeeded version
+	// (if they are different) are kept for the time period specified by the "retentionPeriod"
+	// parameter. (For more information, see https://docs.aws.amazon.com/iotanalytics/latest/userguide/getting-started.html#aws-iot-analytics-dataset-versions)
+	VersioningConfiguration *VersioningConfiguration `locationName:"versioningConfiguration" type:"structure"`
 }
 
 // String returns the string representation
@@ -8904,6 +9121,11 @@ func (s *UpdateDatasetInput) Validate() error {
 			}
 		}
 	}
+	if s.VersioningConfiguration != nil {
+		if err := s.VersioningConfiguration.Validate(); err != nil {
+			invalidParams.AddNested("VersioningConfiguration", err.(request.ErrInvalidParams))
+		}
+	}
 
 	if invalidParams.Len() > 0 {
 		return invalidParams
@@ -8938,6 +9160,12 @@ func (s *UpdateDatasetInput) SetRetentionPeriod(v *RetentionPeriod) *UpdateDatas
 // SetTriggers sets the Triggers field's value.
 func (s *UpdateDatasetInput) SetTriggers(v []*DatasetTrigger) *UpdateDatasetInput {
 	s.Triggers = v
+	return s
+}
+
+// SetVersioningConfiguration sets the VersioningConfiguration field's value.
+func (s *UpdateDatasetInput) SetVersioningConfiguration(v *VersioningConfiguration) *UpdateDatasetInput {
+	s.VersioningConfiguration = v
 	return s
 }
 
@@ -9027,13 +9255,18 @@ func (s UpdateDatastoreOutput) GoString() string {
 type UpdatePipelineInput struct {
 	_ struct{} `type:"structure"`
 
-	// A list of "PipelineActivity" objects.
-	//
-	// The list can be 1-25 PipelineActivity objects. Activities perform transformations
+	// A list of "PipelineActivity" objects. Activities perform transformations
 	// on your messages, such as removing, renaming or adding message attributes;
 	// filtering messages based on attribute values; invoking your Lambda functions
 	// on messages for advanced processing; or performing mathematical transformations
 	// to normalize device data.
+	//
+	// The list can be 2-25 PipelineActivity objects and must contain both a channel
+	// and a datastore activity. Each entry in the list must contain only one activity,
+	// for example:
+	//
+	// pipelineActivities = [ { "channel": { ... } }, { "lambda": { ... } }, ...
+	// ]
 	//
 	// PipelineActivities is a required field
 	PipelineActivities []*PipelineActivity `locationName:"pipelineActivities" min:"1" type:"list" required:"true"`
@@ -9200,6 +9433,53 @@ func (s *Variable) SetOutputFileUriValue(v *OutputFileUriValue) *Variable {
 // SetStringValue sets the StringValue field's value.
 func (s *Variable) SetStringValue(v string) *Variable {
 	s.StringValue = &v
+	return s
+}
+
+// Information about the versioning of data set contents.
+type VersioningConfiguration struct {
+	_ struct{} `type:"structure"`
+
+	// How many versions of data set contents will be kept. The "unlimited" parameter
+	// must be false.
+	MaxVersions *int64 `locationName:"maxVersions" min:"1" type:"integer"`
+
+	// If true, unlimited versions of data set contents will be kept.
+	Unlimited *bool `locationName:"unlimited" type:"boolean"`
+}
+
+// String returns the string representation
+func (s VersioningConfiguration) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s VersioningConfiguration) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *VersioningConfiguration) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "VersioningConfiguration"}
+	if s.MaxVersions != nil && *s.MaxVersions < 1 {
+		invalidParams.Add(request.NewErrParamMinValue("MaxVersions", 1))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetMaxVersions sets the MaxVersions field's value.
+func (s *VersioningConfiguration) SetMaxVersions(v int64) *VersioningConfiguration {
+	s.MaxVersions = &v
+	return s
+}
+
+// SetUnlimited sets the Unlimited field's value.
+func (s *VersioningConfiguration) SetUnlimited(v bool) *VersioningConfiguration {
+	s.Unlimited = &v
 	return s
 }
 

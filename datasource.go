@@ -347,9 +347,12 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *data
 		to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 
 		pattern := parameters.Get("pattern").MustString()
+		workGroup := parameters.Get("work_group").MustString()
 		r := regexp.MustCompile(pattern)
 		limit := parameters.Get("limit").MustInt()
-		li := &athena.ListQueryExecutionsInput{}
+		li := &athena.ListQueryExecutionsInput{
+			WorkGroup: &workGroup,
+		}
 		lo := &athena.ListQueryExecutionsOutput{}
 		err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
 			func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {

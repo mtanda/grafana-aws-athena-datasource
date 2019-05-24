@@ -2,7 +2,7 @@
 
 
 [[projects]]
-  digest = "1:2f245539121de543cc8a58318712d83da09bb559f61921c1df6c598f07ceff30"
+  digest = "1:9dd5412c28d81a3f7448a71652eb4d2d4ba9b1085f995fa7dde9866e67f3dfc3"
   name = "github.com/aws/aws-sdk-go"
   packages = [
     "aws",
@@ -39,8 +39,8 @@
     "service/sts",
   ]
   pruneopts = ""
-  revision = "6ff66bb2b8ac90ac25b1dbbf9806f09651630789"
-  version = "v1.17.12"
+  revision = "a4072efa95b76eb4d8eaebe701abee730cce3e60"
+  version = "v1.19.37"
 
 [[projects]]
   branch = "master"
