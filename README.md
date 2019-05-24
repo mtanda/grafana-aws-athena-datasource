@@ -33,8 +33,9 @@ The `query_execution_ids()` result is always sorted by `CompletionDateTime` in d
 #### Changelog
 
 ##### v1.1.0
-- Added support for pathena work groups](https://docs.aws.amazon.com/athena/latest/ug/user-created-workgroups.html) to work around the long api call for execution ids
+- Added support for [athena work groups](https://docs.aws.amazon.com/athena/latest/ug/user-created-workgroups.html) to work around the long api call for execution ids
 - Updated the Makefile to use webpack, as well as package.json to use the latest version of babel
+- Properly handle null values in the results of the query by ignoring them
 
 ##### v1.0.0
 - Initial release
