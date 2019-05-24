@@ -27,6 +27,9 @@ Name | Description
 
 The `query_execution_ids()` result is always sorted by `CompletionDateTime` in descending order.
 
+#### Null Values In Result
+- Null Values are excluded from the returned result 
+
 #### Changelog
 
 ##### v1.1.0

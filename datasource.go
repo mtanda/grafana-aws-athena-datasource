@@ -138,6 +138,7 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 		var timestamp int64
 		var value float64
 		var err error
+		nilVal := false
 
 		if i == 0 {
 			continue // skip header
@@ -154,6 +155,10 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 				}
 				timestamp = t.Unix() * 1000
 			case valueColumn:
+				if d.VarCharValue == nil {
+					nilVal = true
+					continue
+				}
 				value, err = strconv.ParseFloat(*d.VarCharValue, 64)
 				if err != nil {
 					return nil, err
@@ -161,6 +166,10 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 			default:
 				kv[columnName] = *d.VarCharValue
 			}
+		}
+
+		if nilVal {
+			continue //data was null
 		}
 
 		if !t.IsZero() && (t.Before(from) || t.After(to)) {
