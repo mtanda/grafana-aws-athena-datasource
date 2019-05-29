@@ -159,7 +159,9 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 					return nil, err
 				}
 			default:
-				kv[columnName] = *d.VarCharValue
+				if d != nil {
+					kv[columnName] = *d.VarCharValue
+				}
 			}
 		}
 
