@@ -171,7 +171,7 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 
 		name := formatLegend(kv, legendFormat)
 		if (series[name]) == nil {
-			series[name] = &datasource.TimeSeries{Name: name}
+			series[name] = &datasource.TimeSeries{Name: name, Tags: kv}
 		}
 
 		series[name].Points = append(series[name].Points, &datasource.Point{
