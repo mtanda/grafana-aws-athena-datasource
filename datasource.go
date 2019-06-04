@@ -145,6 +145,10 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 
 		kv := make(map[string]string)
 		for j, d := range r.Data {
+			if d == nil || d.VarCharValue == nil {
+				continue
+			}
+
 			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
 			switch columnName {
 			case timestampColumn:
@@ -182,6 +186,9 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 
 	s := make([]*datasource.TimeSeries, 0)
 	for _, ss := range series {
+		sort.Slice(ss.Points, func(i, j int) bool {
+			return ss.Points[i].Timestamp < ss.Points[j].Timestamp
+		})
 		s = append(s, ss)
 	}
 
