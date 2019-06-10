@@ -138,7 +138,6 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 		var timestamp int64
 		var value float64
 		var err error
-		nilVal := false
 
 		if i == 0 {
 			continue // skip header
@@ -146,6 +145,10 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 
 		kv := make(map[string]string)
 		for j, d := range r.Data {
+			if d == nil || d.VarCharValue == nil {
+				continue
+			}
+
 			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
 			switch columnName {
 			case timestampColumn:
@@ -155,21 +158,15 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 				}
 				timestamp = t.Unix() * 1000
 			case valueColumn:
-				if d.VarCharValue == nil {
-					nilVal = true
-					continue
-				}
 				value, err = strconv.ParseFloat(*d.VarCharValue, 64)
 				if err != nil {
 					return nil, err
 				}
 			default:
-				kv[columnName] = *d.VarCharValue
+				if d != nil {
+					kv[columnName] = *d.VarCharValue
+				}
 			}
-		}
-
-		if nilVal {
-			continue //data was null
 		}
 
 		if !t.IsZero() && (t.Before(from) || t.After(to)) {
@@ -178,7 +175,7 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 
 		name := formatLegend(kv, legendFormat)
 		if (series[name]) == nil {
-			series[name] = &datasource.TimeSeries{Name: name}
+			series[name] = &datasource.TimeSeries{Name: name, Tags: kv}
 		}
 
 		series[name].Points = append(series[name].Points, &datasource.Point{
@@ -189,6 +186,9 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 
 	s := make([]*datasource.TimeSeries, 0)
 	for _, ss := range series {
+		sort.Slice(ss.Points, func(i, j int) bool {
+			return ss.Points[i].Timestamp < ss.Points[j].Timestamp
+		})
 		s = append(s, ss)
 	}
 
@@ -356,11 +356,16 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *data
 		to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 
 		pattern := parameters.Get("pattern").MustString()
-		workGroup := parameters.Get("work_group").MustString()
+		var workGroupParam *string
+		workGroupParam = nil
+		if workGroup, ok := parameters.CheckGet("work_group"); ok {
+			temp := workGroup.MustString()
+			workGroupParam = &temp
+		}
 		r := regexp.MustCompile(pattern)
 		limit := parameters.Get("limit").MustInt()
 		li := &athena.ListQueryExecutionsInput{
-			WorkGroup: &workGroup,
+			WorkGroup: workGroupParam,
 		}
 		lo := &athena.ListQueryExecutionsOutput{}
 		err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
