@@ -124,15 +124,24 @@ export class AwsAthenaDatasource {
       });
     }
 
-    let queryExecutionIdsQuery = query.match(/^query_execution_ids\(([^,]+?),\s?([^,]+?),\s?(.+)\)/);
+    let queryExecutionIdsQuery = query.match(/^query_execution_ids\(([^,]+?),\s?([^,]+?),\s?([^,]+)(,\s?.+)?\)/);
     if (queryExecutionIdsQuery) {
       region = queryExecutionIdsQuery[1];
       let limit = queryExecutionIdsQuery[2];
       let pattern = queryExecutionIdsQuery[3];
+      let workGroup = queryExecutionIdsQuery[4];
+      if (workGroup) {
+        workGroup = workGroup.substr(1); //remove the comma
+        workGroup = workGroup.trim();
+      } else {
+        workGroup = null
+      }
+
       return this.doMetricQueryRequest('query_execution_ids', {
         region: this.templateSrv.replace(region),
         limit: parseInt(this.templateSrv.replace(limit), 10),
         pattern: this.templateSrv.replace(pattern, {}, 'regex'),
+        work_group: this.templateSrv.replace(workGroup),
       });
     }
 

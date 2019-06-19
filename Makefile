@@ -1,7 +1,7 @@
-all: grunt build
+all: webpack build
 
-grunt:
-	grunt
+webpack:
+	npm run build
 
 build:
 	GOOS=linux GOARCH=amd64 go build -o ./dist/aws-athena-plugin_linux_amd64 .
