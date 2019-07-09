@@ -142,7 +142,7 @@ func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest)
 func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, valueColumn string, legendFormat string) (*datasource.QueryResult, error) {
 	series := make(map[string]*datasource.TimeSeries)
 
-	for i, r := range resp.ResultSet.Rows {
+	for _, r := range resp.ResultSet.Rows {
 		var t time.Time
 		var timestamp int64
 		var value float64
@@ -209,7 +209,7 @@ func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string, from t
 	for _, c := range resp.ResultSet.ResultSetMetadata.ColumnInfo {
 		table.Columns = append(table.Columns, &datasource.TableColumn{Name: *c.Name})
 	}
-	for i, r := range resp.ResultSet.Rows {
+	for _, r := range resp.ResultSet.Rows {
 		var timestamp time.Time
 		var err error
 		row := &datasource.TableRow{}
