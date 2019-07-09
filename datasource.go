@@ -106,6 +106,29 @@ func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest)
 			return nil, err
 		}
 
+		dedupe := true // TODO: add query option?
+		if dedupe {
+			bi := &athena.BatchGetQueryExecutionInput{}
+			for _, input := range target.Inputs {
+				bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
+			}
+			bo, err := svc.BatchGetQueryExecution(bi)
+			if err != nil {
+				return nil, err
+			}
+			dupCheck := make(map[string]bool)
+			target.Inputs = make([]athena.GetQueryResultsInput, 0)
+			for _, q := range bo.QueryExecutions {
+				if _, dup := dupCheck[*q.Query]; dup {
+					continue
+				}
+				dupCheck[*q.Query] = true
+				target.Inputs = append(target.Inputs, athena.GetQueryResultsInput{
+					QueryExecutionId: q.QueryExecutionId,
+				})
+			}
+		}
+
 		result := athena.GetQueryResultsOutput{
 			ResultSet: &athena.ResultSet{
 				Rows: make([]*athena.Row, 0),
