@@ -4,13 +4,9 @@
       <select class="gf-form-input" ng-model="ctrl.target.format" ng-options="f as f for f in ['table', 'timeserie']"></select>
     </div>
 
-    <div class="gf-form">
+    <div class="gf-form gf-form--grow">
       <textarea class="gf-form-input" rows="1" ng-model="ctrl.target.queryExecutionId" spellcheck="false" ng-blur="ctrl.onChangeInternal()"
       />
-    </div>
-
-    <div class="gf-form gf-form--grow">
-      <div class="gf-form-label gf-form-label--grow"></div>
     </div>
   </div>
 
