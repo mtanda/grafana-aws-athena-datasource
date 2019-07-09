@@ -269,9 +269,11 @@ function () {
         timestampColumn: target.timestampColumn,
         valueColumn: target.valueColumn,
         legendFormat: target.legendFormat || '',
-        input: {
-          queryExecutionId: _this.templateSrv.replace(target.queryExecutionId, options.scopedVars)
-        }
+        inputs: _this.templateSrv.replace(target.queryExecutionId, options.scopedVars).split(/,/).map(function (id) {
+          return {
+            queryExecutionId: id
+          };
+        })
       };
     });
 
