@@ -28,7 +28,7 @@ type Target struct {
 	QueryType       string
 	Format          string
 	Region          string
-	Input           athena.GetQueryResultsInput
+	Inputs          []athena.GetQueryResultsInput
 	TimestampColumn string
 	ValueColumn     string
 	LegendFormat    string
@@ -106,20 +106,29 @@ func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest)
 			return nil, err
 		}
 
-		resp, err := svc.GetQueryResults(&target.Input)
-		if err != nil {
-			return nil, err
+		result := athena.GetQueryResultsOutput{
+			ResultSet: &athena.ResultSet{
+				Rows: make([]*athena.Row, 0),
+			},
+		}
+		for _, input := range target.Inputs {
+			resp, err := svc.GetQueryResults(&input)
+			if err != nil {
+				return nil, err
+			}
+			result.ResultSet.ResultSetMetadata = resp.ResultSet.ResultSetMetadata
+			result.ResultSet.Rows = append(result.ResultSet.Rows, resp.ResultSet.Rows[1:]...)
 		}
 
 		switch target.Format {
 		case "timeserie":
-			r, err := parseTimeSeriesResponse(resp, target.RefId, from, to, target.TimestampColumn, target.ValueColumn, target.LegendFormat)
+			r, err := parseTimeSeriesResponse(&result, target.RefId, from, to, target.TimestampColumn, target.ValueColumn, target.LegendFormat)
 			if err != nil {
 				return nil, err
 			}
 			response.Results = append(response.Results, r)
 		case "table":
-			r, err := parseTableResponse(resp, target.RefId, from, to, target.TimestampColumn)
+			r, err := parseTableResponse(&result, target.RefId, from, to, target.TimestampColumn)
 			if err != nil {
 				return nil, err
 			}
@@ -138,10 +147,6 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 		var timestamp int64
 		var value float64
 		var err error
-
-		if i == 0 {
-			continue // skip header
-		}
 
 		kv := make(map[string]string)
 		for j, d := range r.Data {
@@ -205,10 +210,6 @@ func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string, from t
 		table.Columns = append(table.Columns, &datasource.TableColumn{Name: *c.Name})
 	}
 	for i, r := range resp.ResultSet.Rows {
-		if i == 0 {
-			continue // skip header
-		}
-
 		var timestamp time.Time
 		var err error
 		row := &datasource.TableRow{}

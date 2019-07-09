@@ -93,9 +93,11 @@ export class AwsAthenaDatasource {
         timestampColumn: target.timestampColumn,
         valueColumn: target.valueColumn,
         legendFormat: target.legendFormat || '',
-        input: {
-          queryExecutionId: this.templateSrv.replace(target.queryExecutionId, options.scopedVars)
-        }
+        inputs: this.templateSrv.replace(target.queryExecutionId, options.scopedVars).split(/,/).map((id) => {
+          return {
+            queryExecutionId: id
+          };
+        })
       };
     });
 
