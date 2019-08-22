@@ -19,13 +19,16 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v1
 
-      - name: Build
-        env:
-          GO111MODULE: on
-        run: go build -v .
-
       - name: npm install, build #, and test
         run: |
           npm install
           npm run build --if-present
           #npm test
+
+      - name: Build
+        env:
+          GO111MODULE: on
+        run: make build
+
+      - name: Package
+        run: npx grafana-toolkit plugin:ci-package
