@@ -1,4 +1,4 @@
-import _ from "lodash";
+import _ from 'lodash';
 import TableModel from 'grafana/app/core/table_model';
 
 export class AwsAthenaDatasource {
@@ -34,51 +34,55 @@ export class AwsAthenaDatasource {
     }
 
     return this.doRequest({
-      data: query
+      data: query,
     });
   }
 
   testDatasource() {
     return this.doMetricQueryRequest('named_query_names', {
       region: this.defaultRegion,
-    }).then(res => {
-      return this.q.when({ status: "success", message: "Data source is working", title: "Success" });
-    }).catch(err => {
-      return { status: "error", message: err.message, title: "Error" };
-    });
+    })
+      .then(res => {
+        return this.q.when({ status: 'success', message: 'Data source is working', title: 'Success' });
+      })
+      .catch(err => {
+        return { status: 'error', message: err.message, title: 'Error' };
+      });
   }
 
   doRequest(options) {
-    return this.backendSrv.datasourceRequest({
-      url: '/api/tsdb/query',
-      method: 'POST',
-      data: {
-        from: options.data.range.from.valueOf().toString(),
-        to: options.data.range.to.valueOf().toString(),
-        queries: options.data.targets,
-      }
-    }).then(result => {
-      let res: any = [];
-      for (const query of options.data.targets) {
-        const r = result.data.results[query.refId];
-        if (!_.isEmpty(r.series)) {
-          _.forEach(r.series, s => {
-            res.push({ target: s.name, datapoints: s.points });
-          });
+    return this.backendSrv
+      .datasourceRequest({
+        url: '/api/tsdb/query',
+        method: 'POST',
+        data: {
+          from: options.data.range.from.valueOf().toString(),
+          to: options.data.range.to.valueOf().toString(),
+          queries: options.data.targets,
+        },
+      })
+      .then(result => {
+        let res: any = [];
+        for (const query of options.data.targets) {
+          const r = result.data.results[query.refId];
+          if (!_.isEmpty(r.series)) {
+            _.forEach(r.series, s => {
+              res.push({ target: s.name, datapoints: s.points });
+            });
+          }
+          if (!_.isEmpty(r.tables)) {
+            _.forEach(r.tables, t => {
+              let table = new TableModel();
+              table.columns = t.columns;
+              table.rows = t.rows;
+              res.push(table);
+            });
+          }
         }
-        if (!_.isEmpty(r.tables)) {
-          _.forEach(r.tables, t => {
-            let table = new TableModel();
-            table.columns = t.columns;
-            table.rows = t.rows;
-            res.push(table);
-          });
-        }
-      }
 
-      result.data = res;
-      return result;
-    });
+        result.data = res;
+        return result;
+      });
   }
 
   buildQueryParameters(options) {
@@ -93,11 +97,14 @@ export class AwsAthenaDatasource {
         timestampColumn: target.timestampColumn,
         valueColumn: target.valueColumn,
         legendFormat: target.legendFormat || '',
-        inputs: this.templateSrv.replace(target.queryExecutionId, options.scopedVars).split(/,/).map((id) => {
-          return {
-            queryExecutionId: id
-          };
-        })
+        inputs: this.templateSrv
+          .replace(target.queryExecutionId, options.scopedVars)
+          .split(/,/)
+          .map(id => {
+            return {
+              queryExecutionId: id,
+            };
+          }),
       };
     });
 
@@ -136,7 +143,7 @@ export class AwsAthenaDatasource {
         workGroup = workGroup.substr(1); //remove the comma
         workGroup = workGroup.trim();
       } else {
-        workGroup = null
+        workGroup = null;
       }
 
       return this.doMetricQueryRequest('query_execution_ids', {
@@ -152,27 +159,29 @@ export class AwsAthenaDatasource {
 
   doMetricQueryRequest(subtype, parameters) {
     var range = this.timeSrv.timeRange();
-    return this.backendSrv.datasourceRequest({
-      url: '/api/tsdb/query',
-      method: 'POST',
-      data: {
-        from: range.from.valueOf().toString(),
-        to: range.to.valueOf().toString(),
-        queries: [
-          _.extend(
-            {
-              refId: 'metricFindQuery',
-              datasourceId: this.id,
-              queryType: 'metricFindQuery',
-              subtype: subtype,
-            },
-            parameters
-          ),
-        ],
-      }
-    }).then(r => {
-      return this.transformSuggestDataFromTable(r.data);
-    });
+    return this.backendSrv
+      .datasourceRequest({
+        url: '/api/tsdb/query',
+        method: 'POST',
+        data: {
+          from: range.from.valueOf().toString(),
+          to: range.to.valueOf().toString(),
+          queries: [
+            _.extend(
+              {
+                refId: 'metricFindQuery',
+                datasourceId: this.id,
+                queryType: 'metricFindQuery',
+                subtype: subtype,
+              },
+              parameters
+            ),
+          ],
+        },
+      })
+      .then(r => {
+        return this.transformSuggestDataFromTable(r.data);
+      });
   }
 
   transformSuggestDataFromTable(suggestData) {

@@ -22,4 +22,3 @@ export class AwsAthenaDatasourceQueryCtrl extends QueryCtrl {
     this.panelCtrl.refresh();
   }
 }
-
