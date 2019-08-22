@@ -32,3 +32,10 @@ jobs:
 
       - name: Package
         run: npx grafana-toolkit plugin:ci-package
+
+      - name: Publish
+        uses: Shopify/upload-to-release
+        with:
+          name: grafana-aws-athena-datasource
+          path: ci/packages/mtanda-aws-athena-datasource-1.1.0.zip
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
