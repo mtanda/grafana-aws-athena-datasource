@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "build": "webpack --config webpack.config.prod.js",
-    "dev": "webpack --mode development",
-    "watch": "webpack --mode development --watch",
-    "test": "jest --config jest.config.js"
+    "build": "grafana-toolkit plugin:build",
+    "test": "grafana-toolkit plugin:test",
+    "dev": "grafana-toolkit plugin:dev"
   },
   "author": "Mitsuhiro Tanda",
   "license": "Apache",
@@ -17,30 +16,14 @@
     "rxjs-compat": "^6.2.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.4.5",
-    "@babel/preset-env": "^7.4.5",
+    "@grafana/data": "^6.3.2",
+    "@grafana/toolkit": "next",
+    "@grafana/ui": "^6.3.2",
     "@types/ace": "0.0.40",
     "@types/grafana": "https://git@github.com/CorpGlory/types-grafana.git",
     "@types/jest": "^24.0.17",
     "@types/lodash": "^4.14.136",
     "@types/react": "^16.2.0",
-    "@types/rx": "^4.1.1",
-    "babel-core": "^7.0.0-bridge.0",
-    "babel-jest": "^24.8.0",
-    "babel-loader": "^7.1.4",
-    "babel-preset-env": "^1.7.0",
-    "clean-webpack-plugin": "^0.1.19",
-    "copy-webpack-plugin": "^4.5.1",
-    "css-loader": "^3.2.0",
-    "grafana-sdk-mocks": "github:grafana/grafana-sdk-mocks",
-    "jest": "^24.8.0",
-    "ng-annotate-webpack-plugin": "^0.3.0",
-    "style-loader": "^0.21.0",
-    "ts-jest": "^24.0.2",
-    "ts-loader": "^6.0.4",
-    "typescript": "^2.8.3",
-    "uglifyjs-webpack-plugin": "^2.1.2",
-    "webpack": "^4.39.1",
-    "webpack-cli": "^3.3.6"
+    "@types/rx": "^4.1.1"
   }
 }
