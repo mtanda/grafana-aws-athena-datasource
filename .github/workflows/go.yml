@@ -34,7 +34,7 @@ jobs:
         run: npx grafana-toolkit plugin:ci-package
 
       - name: Publish
-        uses: Shopify/upload-to-release
+        uses: Shopify/upload-to-release@master
         with:
           name: grafana-aws-athena-datasource
           path: ci/packages/mtanda-aws-athena-datasource-1.1.0.zip
