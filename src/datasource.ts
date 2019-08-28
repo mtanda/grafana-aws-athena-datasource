@@ -27,7 +27,7 @@ export class AwsAthenaDatasource {
   }
 
   query(options) {
-    let query = this.buildQueryParameters(options);
+    const query = this.buildQueryParameters(options);
     query.targets = query.targets.filter(t => !t.hide);
 
     if (query.targets.length <= 0) {
@@ -63,7 +63,7 @@ export class AwsAthenaDatasource {
         },
       })
       .then(result => {
-        let res: any = [];
+        const res: any = [];
         for (const query of options.data.targets) {
           const r = result.data.results[query.refId];
           if (!_.isEmpty(r.series)) {
@@ -73,7 +73,7 @@ export class AwsAthenaDatasource {
           }
           if (!_.isEmpty(r.tables)) {
             _.forEach(r.tables, t => {
-              let table = new TableModel();
+              const table = new TableModel();
               table.columns = t.columns;
               table.rows = t.rows;
               res.push(table);
@@ -87,7 +87,7 @@ export class AwsAthenaDatasource {
   }
 
   buildQueryParameters(options) {
-    let targets = _.map(options.targets, target => {
+    const targets = _.map(options.targets, target => {
       return {
         refId: target.refId,
         hide: target.hide,
@@ -116,7 +116,7 @@ export class AwsAthenaDatasource {
   metricFindQuery(query) {
     let region;
 
-    let namedQueryNamesQuery = query.match(/^named_query_names\(([^\)]+?)\)/);
+    const namedQueryNamesQuery = query.match(/^named_query_names\(([^\)]+?)\)/);
     if (namedQueryNamesQuery) {
       region = namedQueryNamesQuery[1];
       return this.doMetricQueryRequest('named_query_names', {
@@ -124,21 +124,21 @@ export class AwsAthenaDatasource {
       });
     }
 
-    let namedQueryQueryQuery = query.match(/^named_query_queries\(([^,]+?),\s?(.+)\)/);
+    const namedQueryQueryQuery = query.match(/^named_query_queries\(([^,]+?),\s?(.+)\)/);
     if (namedQueryQueryQuery) {
       region = namedQueryQueryQuery[1];
-      let pattern = namedQueryQueryQuery[2];
+      const pattern = namedQueryQueryQuery[2];
       return this.doMetricQueryRequest('named_query_queries', {
         region: this.templateSrv.replace(region),
         pattern: this.templateSrv.replace(pattern, {}, 'regex'),
       });
     }
 
-    let queryExecutionIdsQuery = query.match(/^query_execution_ids\(([^,]+?),\s?([^,]+?),\s?([^,]+)(,\s?.+)?\)/);
+    const queryExecutionIdsQuery = query.match(/^query_execution_ids\(([^,]+?),\s?([^,]+?),\s?([^,]+)(,\s?.+)?\)/);
     if (queryExecutionIdsQuery) {
       region = queryExecutionIdsQuery[1];
-      let limit = queryExecutionIdsQuery[2];
-      let pattern = queryExecutionIdsQuery[3];
+      const limit = queryExecutionIdsQuery[2];
+      const pattern = queryExecutionIdsQuery[3];
       let workGroup = queryExecutionIdsQuery[4];
       if (workGroup) {
         workGroup = workGroup.substr(1); //remove the comma
@@ -159,7 +159,7 @@ export class AwsAthenaDatasource {
   }
 
   doMetricQueryRequest(subtype, parameters) {
-    var range = this.timeSrv.timeRange();
+    const range = this.timeSrv.timeRange();
     return this.backendSrv
       .datasourceRequest({
         url: '/api/tsdb/query',
