@@ -13,6 +13,7 @@ export class AwsAthenaDatasource {
   templateSrv: any;
   timeSrv: any;
 
+  /** @ngInject */
   constructor(instanceSettings, $q, backendSrv, templateSrv, timeSrv) {
     this.type = instanceSettings.type;
     this.url = instanceSettings.url;
