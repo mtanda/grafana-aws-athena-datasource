@@ -36,6 +36,6 @@ jobs:
       - name: Publish
         uses: Shopify/upload-to-release@master
         with:
-          name: grafana-aws-athena-datasource
-          path: ci/packages/mtanda-aws-athena-datasource-1.1.0.zip
+          name: grafana-aws-athena-datasource-${{github.event.release.tag_name}}.zip
+          path: ci/packages/mtanda-aws-athena-datasource-${{github.event.release.tag_name}}.zip
           repo-token: ${{ secrets.GITHUB_TOKEN }}
