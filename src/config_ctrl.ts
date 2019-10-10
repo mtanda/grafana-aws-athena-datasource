@@ -4,7 +4,7 @@ export class AwsAthenaDatasourceConfigCtrl {
   secretKeyExist: any;
   datasourceSrv: any;
   authTypes: any;
-  static templateUrl = 'partials/config.html';
+  static templateUrl = 'config.html';
 
   /** @ngInject */
   constructor($scope, datasourceSrv) {

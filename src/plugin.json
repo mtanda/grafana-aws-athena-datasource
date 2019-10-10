@@ -3,7 +3,7 @@
   "id": "mtanda-aws-athena-datasource",
   "type": "datasource",
   "partials": {
-    "config": "public/app/plugins/datasource/mtanda-aws-athena-datasource/partials/config.html"
+    "config": "public/app/plugins/datasource/mtanda-aws-athena-datasource/config.html"
   },
   "metrics": true,
   "annotations": false,

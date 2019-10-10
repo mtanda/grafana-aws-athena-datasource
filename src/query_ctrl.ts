@@ -4,7 +4,7 @@ export class AwsAthenaDatasourceQueryCtrl extends QueryCtrl {
   scope: any;
   target: any;
   panelCtrl: any;
-  static templateUrl = 'partials/query.editor.html';
+  static templateUrl = 'query.editor.html';
 
   /** @ngInject */
   constructor($scope, $injector) {
