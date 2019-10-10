@@ -28,7 +28,7 @@ export class AwsAthenaDatasource {
 
   query(options) {
     const query = this.buildQueryParameters(options);
-    query.targets = query.targets.filter(t => !t.hide);
+    query.targets = query.targets.filter(t => !t.hide && t.queryExecutionId);
 
     if (query.targets.length <= 0) {
       return this.q.when({ data: [] });
