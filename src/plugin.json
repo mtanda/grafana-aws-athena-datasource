@@ -25,8 +25,8 @@
         "url": "https://github.com/mtanda/grafana-aws-athena-datasource/blob/master/LICENSE"
       }
     ],
-    "version": "1.1.0",
-    "updated": "2019-06-10"
+    "version": "1.1.1",
+    "updated": "2019-10-10"
   },
   "dependencies": {
     "grafanaVersion": "5.x.x",
