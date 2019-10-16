@@ -7,6 +7,8 @@ Grafana doesn't support cache the result now, post query when dashboard is open 
 So, please post query outside of this plugin.
 
 ### Setup
+Follow [Installing Plugins Manually](https://grafana.com/docs/plugins/installation/) steps, and install plugin from released zip file.
+
 Allow following API for EC2 instance, and run Grafana on the EC2 instance.
 
 - athena:GetQueryResults
