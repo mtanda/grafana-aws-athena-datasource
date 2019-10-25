@@ -32,6 +32,7 @@ type Target struct {
 	TimestampColumn string
 	ValueColumn     string
 	LegendFormat    string
+	timeFormat      string
 }
 
 var (
@@ -143,15 +144,20 @@ func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest)
 			result.ResultSet.Rows = append(result.ResultSet.Rows, resp.ResultSet.Rows[1:]...)
 		}
 
+		timeFormat := target.timeFormat
+		if timeFormat == "" {
+			timeFormat = time.RFC3339Nano
+		}
+
 		switch target.Format {
 		case "timeserie":
-			r, err := parseTimeSeriesResponse(&result, target.RefId, from, to, target.TimestampColumn, target.ValueColumn, target.LegendFormat)
+			r, err := parseTimeSeriesResponse(&result, target.RefId, from, to, target.TimestampColumn, target.ValueColumn, target.LegendFormat, timeFormat)
 			if err != nil {
 				return nil, err
 			}
 			response.Results = append(response.Results, r)
 		case "table":
-			r, err := parseTableResponse(&result, target.RefId, from, to, target.TimestampColumn)
+			r, err := parseTableResponse(&result, target.RefId, from, to, target.TimestampColumn, timeFormat)
 			if err != nil {
 				return nil, err
 			}
@@ -162,7 +168,7 @@ func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest)
 	return response, nil
 }
 
-func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, valueColumn string, legendFormat string) (*datasource.QueryResult, error) {
+func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, valueColumn string, legendFormat string, timeFormat string) (*datasource.QueryResult, error) {
 	series := make(map[string]*datasource.TimeSeries)
 
 	for _, r := range resp.ResultSet.Rows {
@@ -180,7 +186,7 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
 			switch columnName {
 			case timestampColumn:
-				t, err = time.Parse(time.RFC3339Nano, *d.VarCharValue)
+				t, err = time.Parse(timeFormat, *d.VarCharValue)
 				if err != nil {
 					return nil, err
 				}
@@ -226,7 +232,7 @@ func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, f
 	}, nil
 }
 
-func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string) (*datasource.QueryResult, error) {
+func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, timeFormat string) (*datasource.QueryResult, error) {
 	table := &datasource.Table{}
 
 	for _, c := range resp.ResultSet.ResultSetMetadata.ColumnInfo {
@@ -237,17 +243,17 @@ func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string, from t
 		var err error
 		row := &datasource.TableRow{}
 		for j, d := range r.Data {
-			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
-			if columnName == timestampColumn {
-				timestamp, err = time.Parse(time.RFC3339Nano, *d.VarCharValue)
-				if err != nil {
-					return nil, err
-				}
-			}
-
 			if d == nil || d.VarCharValue == nil {
 				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_NULL})
 				continue
+			}
+
+			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
+			if columnName == timestampColumn {
+				timestamp, err = time.Parse(timeFormat, *d.VarCharValue)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			switch *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Type {

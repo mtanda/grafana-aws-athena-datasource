@@ -1,11 +1,14 @@
 import _ from 'lodash';
 import TableModel from 'grafana/app/core/table_model';
+import { DataSourceApi, DataSourceInstanceSettings, DataQueryRequest, DataQueryResponse } from '@grafana/ui';
+import { AwsAthenaQuery, AwsAthenaOptions } from './types';
+import { Observable } from 'rxjs';
 
-export class AwsAthenaDatasource {
+export default class AwsAthenaDatasource extends DataSourceApi<AwsAthenaQuery, AwsAthenaOptions> {
   type: string;
   url: string;
   name: string;
-  id: string;
+  id: number;
   defaultRegion: string;
   q: any;
   $q: any;
@@ -14,9 +17,10 @@ export class AwsAthenaDatasource {
   timeSrv: any;
 
   /** @ngInject */
-  constructor(instanceSettings, $q, backendSrv, templateSrv, timeSrv) {
+  constructor(instanceSettings: DataSourceInstanceSettings<AwsAthenaOptions>, $q, backendSrv, templateSrv, timeSrv) {
+    super(instanceSettings);
     this.type = instanceSettings.type;
-    this.url = instanceSettings.url;
+    this.url = instanceSettings.url || '';
     this.name = instanceSettings.name;
     this.id = instanceSettings.id;
     this.defaultRegion = instanceSettings.jsonData.defaultRegion;
@@ -26,9 +30,8 @@ export class AwsAthenaDatasource {
     this.timeSrv = timeSrv;
   }
 
-  query(options) {
+  query(options: DataQueryRequest<AwsAthenaQuery>): Observable<DataQueryResponse> {
     const query = this.buildQueryParameters(options);
-    query.targets = query.targets.filter(t => !t.hide && t.queryExecutionId);
 
     if (query.targets.length <= 0) {
       return this.q.when({ data: [] });
@@ -87,27 +90,30 @@ export class AwsAthenaDatasource {
   }
 
   buildQueryParameters(options) {
-    const targets = _.map(options.targets, target => {
-      return {
-        refId: target.refId,
-        hide: target.hide,
-        datasourceId: this.id,
-        queryType: 'timeSeriesQuery',
-        format: target.format || 'timeserie',
-        region: this.templateSrv.replace(target.region, options.scopedVars) || this.defaultRegion,
-        timestampColumn: target.timestampColumn,
-        valueColumn: target.valueColumn,
-        legendFormat: target.legendFormat || '',
-        inputs: this.templateSrv
-          .replace(target.queryExecutionId, options.scopedVars)
-          .split(/,/)
-          .map(id => {
-            return {
-              queryExecutionId: id,
-            };
-          }),
-      };
-    });
+    const targets = options.targets
+      .filter(target => !target.hide && target.queryExecutionId)
+      .map(target => {
+        return {
+          refId: target.refId,
+          hide: target.hide,
+          datasourceId: this.id,
+          queryType: 'timeSeriesQuery',
+          format: target.format || 'timeserie',
+          region: this.templateSrv.replace(target.region, options.scopedVars) || this.defaultRegion,
+          timestampColumn: target.timestampColumn,
+          valueColumn: target.valueColumn,
+          legendFormat: target.legendFormat || '',
+          timeFormat: target.timeFormat || '',
+          inputs: this.templateSrv
+            .replace(target.queryExecutionId, options.scopedVars)
+            .split(/,/)
+            .map(id => {
+              return {
+                queryExecutionId: id,
+              };
+            }),
+        };
+      });
 
     options.targets = targets;
     return options;

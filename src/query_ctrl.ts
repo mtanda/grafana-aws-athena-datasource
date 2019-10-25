@@ -16,6 +16,7 @@ export class AwsAthenaDatasourceQueryCtrl extends QueryCtrl {
     this.target.timestampColumn = this.target.timestampColumn || '';
     this.target.valueColumn = this.target.valueColumn || '';
     this.target.legendFormat = this.target.legendFormat || '';
+    this.target.timeFormat = this.target.timeFormat || '';
     this.target.queryExecutionId = this.target.queryExecutionId || '';
   }
 
