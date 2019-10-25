@@ -12,4 +12,5 @@ export interface AwsAthenaQuery extends DataQuery {
   timestampColumn: string;
   valueColumn: string;
   legendFormat: string;
+  timeFormat: string;
 }

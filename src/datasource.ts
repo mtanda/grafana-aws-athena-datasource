@@ -103,6 +103,7 @@ export default class AwsAthenaDatasource extends DataSourceApi<AwsAthenaQuery, A
           timestampColumn: target.timestampColumn,
           valueColumn: target.valueColumn,
           legendFormat: target.legendFormat || '',
+          timeFormat: target.timeFormat || '',
           inputs: this.templateSrv
             .replace(target.queryExecutionId, options.scopedVars)
             .split(/,/)
