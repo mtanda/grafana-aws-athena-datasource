@@ -243,17 +243,17 @@ func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string, from t
 		var err error
 		row := &datasource.TableRow{}
 		for j, d := range r.Data {
+			if d == nil || d.VarCharValue == nil {
+				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_NULL})
+				continue
+			}
+
 			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
 			if columnName == timestampColumn {
 				timestamp, err = time.Parse(timeFormat, *d.VarCharValue)
 				if err != nil {
 					return nil, err
 				}
-			}
-
-			if d == nil || d.VarCharValue == nil {
-				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_NULL})
-				continue
 			}
 
 			switch *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Type {
