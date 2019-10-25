@@ -32,7 +32,6 @@ export default class AwsAthenaDatasource extends DataSourceApi<AwsAthenaQuery, A
 
   query(options: DataQueryRequest<AwsAthenaQuery>): Observable<DataQueryResponse> {
     const query = this.buildQueryParameters(options);
-    query.targets = query.targets.filter(t => !t.hide && t.queryExecutionId);
 
     if (query.targets.length <= 0) {
       return this.q.when({ data: [] });
@@ -91,27 +90,29 @@ export default class AwsAthenaDatasource extends DataSourceApi<AwsAthenaQuery, A
   }
 
   buildQueryParameters(options) {
-    const targets = _.map(options.targets, target => {
-      return {
-        refId: target.refId,
-        hide: target.hide,
-        datasourceId: this.id,
-        queryType: 'timeSeriesQuery',
-        format: target.format || 'timeserie',
-        region: this.templateSrv.replace(target.region, options.scopedVars) || this.defaultRegion,
-        timestampColumn: target.timestampColumn,
-        valueColumn: target.valueColumn,
-        legendFormat: target.legendFormat || '',
-        inputs: this.templateSrv
-          .replace(target.queryExecutionId, options.scopedVars)
-          .split(/,/)
-          .map(id => {
-            return {
-              queryExecutionId: id,
-            };
-          }),
-      };
-    });
+    const targets = options.targets
+      .filter(target => !target.hide && target.queryExecutionId)
+      .map(target => {
+        return {
+          refId: target.refId,
+          hide: target.hide,
+          datasourceId: this.id,
+          queryType: 'timeSeriesQuery',
+          format: target.format || 'timeserie',
+          region: this.templateSrv.replace(target.region, options.scopedVars) || this.defaultRegion,
+          timestampColumn: target.timestampColumn,
+          valueColumn: target.valueColumn,
+          legendFormat: target.legendFormat || '',
+          inputs: this.templateSrv
+            .replace(target.queryExecutionId, options.scopedVars)
+            .split(/,/)
+            .map(id => {
+              return {
+                queryExecutionId: id,
+              };
+            }),
+        };
+      });
 
     options.targets = targets;
     return options;
