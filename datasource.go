@@ -14,8 +14,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/athena"
 
+	"github.com/grafana/grafana-plugin-model/go/datasource"
 	"github.com/grafana/grafana/pkg/components/simplejson"
-	"github.com/grafana/grafana_plugin_model/go/datasource"
 	plugin "github.com/hashicorp/go-plugin"
 )
 
