@@ -16,9 +16,9 @@
     "rxjs-compat": "^6.2.1"
   },
   "devDependencies": {
-    "@grafana/data": "^6.4.2",
-    "@grafana/toolkit": "^6.4.2",
-    "@grafana/ui": "^6.4.2",
+    "@grafana/data": "^6.5.3",
+    "@grafana/toolkit": "^6.5.3",
+    "@grafana/ui": "^6.5.3",
     "@types/grafana": "https://git@github.com/CorpGlory/types-grafana.git",
     "@types/jest": "^24.0.17",
     "@types/lodash": "^4.14.136",

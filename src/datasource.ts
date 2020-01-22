@@ -1,6 +1,6 @@
 import _ from 'lodash';
 import TableModel from 'grafana/app/core/table_model';
-import { DataSourceApi, DataSourceInstanceSettings, DataQueryRequest, DataQueryResponse } from '@grafana/ui';
+import { DataSourceApi, DataSourceInstanceSettings, DataQueryRequest, DataQueryResponse } from '@grafana/data';
 import { AwsAthenaQuery, AwsAthenaOptions } from './types';
 import { Observable } from 'rxjs';
 
