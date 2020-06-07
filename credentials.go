@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/athena"
-	"github.com/grafana/grafana-plugin-model/go/datasource"
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -152,17 +152,17 @@ func ec2RoleProvider(sess *session.Session) credentials.Provider {
 	return &ec2rolecreds.EC2RoleProvider{Client: ec2metadata.New(sess), ExpiryWindow: 5 * time.Minute}
 }
 
-func (t *AwsAthenaDatasource) getDsInfo(datasourceInfo *datasource.DatasourceInfo, region string) (*DatasourceInfo, error) {
+func (t *AwsAthenaDatasource) getDsInfo(datasourceInfo *backend.DataSourceInstanceSettings, region string) (*DatasourceInfo, error) {
 	var dsInfo DatasourceInfo
-	if err := json.Unmarshal([]byte(datasourceInfo.JsonData), &dsInfo); err != nil {
+	if err := json.Unmarshal([]byte(datasourceInfo.JSONData), &dsInfo); err != nil {
 		return nil, err
 	}
 
 	dsInfo.Region = region
-	if v, ok := datasourceInfo.DecryptedSecureJsonData["accessKey"]; ok {
+	if v, ok := datasourceInfo.DecryptedSecureJSONData["accessKey"]; ok {
 		dsInfo.AccessKey = v
 	}
-	if v, ok := datasourceInfo.DecryptedSecureJsonData["secretKey"]; ok {
+	if v, ok := datasourceInfo.DecryptedSecureJSONData["secretKey"]; ok {
 		dsInfo.SecretKey = v
 	}
 
@@ -182,7 +182,7 @@ func (t *AwsAthenaDatasource) getAwsConfig(dsInfo *DatasourceInfo) (*aws.Config,
 	return cfg, nil
 }
 
-func (t *AwsAthenaDatasource) getClient(datasourceInfo *datasource.DatasourceInfo, region string) (*athena.Athena, error) {
+func (t *AwsAthenaDatasource) getClient(datasourceInfo *backend.DataSourceInstanceSettings, region string) (*athena.Athena, error) {
 	dsInfo, err := t.getDsInfo(datasourceInfo, region)
 	if err != nil {
 		return nil, err
