@@ -9,7 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
+	"log"
+	//"os"
 	"golang.org/x/net/context"
 
 	"github.com/aws/aws-sdk-go/service/athena"
@@ -320,6 +321,17 @@ type suggestData struct {
 }
 
 func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *datasource.DatasourceRequest, parameters *simplejson.Json, timeRange *datasource.TimeRange) (*datasource.DatasourceResponse, error) {
+	
+	// ==== this helps debugging 
+	// f, err := os.OpenFile("/usr/local/var/log/grafana/plugin.log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	// if err != nil {
+	// 	log.Fatalf("error opening file: %v", err)
+	// }
+	// defer f.Close()
+
+	// log.SetOutput(f)
+	// log.Println("This is a test log entry")
+	
 	region := parameters.Get("region").MustString()
 	svc, err := t.getClient(tsdbReq.Datasource, region)
 	if err != nil {
@@ -327,7 +339,7 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *data
 	}
 
 	subtype := parameters.Get("subtype").MustString()
-
+	
 	data := make([]suggestData, 0)
 	switch subtype {
 	case "named_query_names":
@@ -428,6 +440,111 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *data
 		})
 		limit = int(math.Min(float64(limit), float64(len(fbo))))
 		for _, q := range fbo[0:limit] {
+			data = append(data, suggestData{Text: *q.QueryExecutionId, Value: *q.QueryExecutionId})
+		}
+	//===================================================	
+	//pdunk added this function to get latest query execution of a specific SQL query that is stored in a named query
+	//the given pattern shall be the name of the named query
+	//1. ListNamedQuery to get all QueryIDs of named Queries 
+	//2. iterate all IDs and call with each ID BatchGetNamedQuery
+	//3.   check names of the found queries against the pattern, store SQL string for the found query name
+	//4. ListQueryExecution to get all executed queries in pagination mode
+	//5. for all IDs in each response page call BatchGetQueryExdecution
+	//6.   check the SQL string of the found data, if it matches the SQL of the named query, return this single QueryExecutionID
+	//NOTE: the order of ListQueryExecution response shows most recent queries first, so we can break as soon as we find the first matching
+	//NOTE2: Thsi function assumes that the lastest executed queries will have all data from the past, so we always want the last successful query
+
+	case "query_execution_by_name":
+		pattern := parameters.Get("pattern").MustString()
+		log.Print("Pattern: ",pattern)
+		r := regexp.MustCompile(pattern)
+		li := &athena.ListNamedQueriesInput{}
+		lo := &athena.ListNamedQueriesOutput{}
+		sql := ""
+		err = svc.ListNamedQueriesPages(li,
+			func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
+				lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
+				return !lastPage
+			})
+		if err != nil {
+			return nil, err
+		}
+		log.Print("ListNamedQueriesPages num: ",len(lo.NamedQueryIds))
+		for i := 0; i < len(lo.NamedQueryIds); i += 50 {
+			e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+			bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
+			bo, err := svc.BatchGetNamedQuery(bi)
+			if err != nil {
+				return nil, err
+			}
+			for _, q := range bo.NamedQueries {
+				if r.MatchString(*q.Name) {
+					sql = *q.QueryString
+					sql = strings.TrimSpace(sql)
+					log.Print("Found query name, SQL: ",sql)
+					break
+				}
+			}
+		}
+		//if we did not find the named query based on the string, we return nil	
+		if sql == "" {
+			return nil, err	
+		}
+
+		//==== we ignore time from-to for the queries ====
+		//toRaw, err := strconv.ParseInt(timeRange.ToRaw, 10, 64)
+		//if err != nil {
+		//	return nil, err
+		//}
+		//to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
+
+		var workGroupParam *string
+		workGroupParam = nil
+		if workGroup, ok := parameters.CheckGet("work_group"); ok {
+			temp := workGroup.MustString()
+			workGroupParam = &temp
+		}
+
+		limit := parameters.Get("limit").MustInt()
+		eli := &athena.ListQueryExecutionsInput{
+			WorkGroup: workGroupParam,
+		}
+
+		efbo := make([]*athena.QueryExecution, 0)
+		err = svc.ListQueryExecutionsPages(eli,
+			func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
+				
+				//==== Instead of collecting all IDs first, we check each page result if we find the SQl query
+				//elo.QueryExecutionIds = append(elo.QueryExecutionIds, page.QueryExecutionIds...)
+				log.Print("ListQueryExecutionsPages pagesize: ",len(page.QueryExecutionIds))	
+
+				bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: page.QueryExecutionIds}
+				bo, err := svc.BatchGetQueryExecution(bi)
+				if err != nil {
+					return false;
+				}
+				for _, q := range bo.QueryExecutions {
+					if *q.Status.State != "SUCCEEDED" {
+						continue
+					}
+					
+					qq := strings.TrimSpace(*q.Query);
+					if (sql == qq) {
+						efbo = append(efbo, q)
+						//lets break with the first matching query
+						log.Print("Found SQL, QueryExecutionID: ", q.QueryExecutionId, " date completed: ", q.Status.CompletionDateTime)
+						return false;
+					}
+				}	
+			return !lastPage
+		})	
+		// if we did not find a query, we return
+		if (len(efbo)) == 0 {
+			return nil,err;
+		}
+
+		limit = int(math.Min(float64(limit), float64(len(efbo))))
+		for _, q := range efbo[0:limit] {
 			data = append(data, suggestData{Text: *q.QueryExecutionId, Value: *q.QueryExecutionId})
 		}
 	}

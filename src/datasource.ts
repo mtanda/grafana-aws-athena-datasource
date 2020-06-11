@@ -161,6 +161,27 @@ export default class AwsAthenaDatasource extends DataSourceApi<AwsAthenaQuery, A
       });
     }
 
+    const queryExecutionIdsNamedQuery = query.match(/^query_execution_by_name\(([^,]+?),\s?([^,]+?),\s?([^,]+)(,\s?.+)?\)/);
+    if (queryExecutionIdsNamedQuery) {
+      region = queryExecutionIdsNamedQuery[1];
+      const limit = queryExecutionIdsNamedQuery[2];
+      const pattern = queryExecutionIdsNamedQuery[3];
+      let workGroup = queryExecutionIdsNamedQuery[4];
+      if (workGroup) {
+        workGroup = workGroup.substr(1); //remove the comma
+        workGroup = workGroup.trim();
+      } else {
+        workGroup = null;
+      }
+
+      return this.doMetricQueryRequest('query_execution_by_name', {
+        region: this.templateSrv.replace(region),
+        limit: parseInt(this.templateSrv.replace(limit), 10),
+        pattern: this.templateSrv.replace(pattern, {}, 'regex'),
+        work_group: this.templateSrv.replace(workGroup),
+      });
+    }
+
     return this.q.when([]);
   }
 
