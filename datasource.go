@@ -458,7 +458,17 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *data
 		pattern := parameters.Get("pattern").MustString()
 		log.Print("Pattern: ",pattern)
 		r := regexp.MustCompile(pattern)
-		li := &athena.ListNamedQueriesInput{}
+		
+		var workGroupParam *string
+		workGroupParam = nil
+		if workGroup, ok := parameters.CheckGet("work_group"); ok {
+			temp := workGroup.MustString()
+			workGroupParam = &temp
+		}
+		
+		li := &athena.ListNamedQueriesInput{
+			WorkGroup: workGroupParam,
+		}
 		lo := &athena.ListNamedQueriesOutput{}
 		sql := ""
 		err = svc.ListNamedQueriesPages(li,
@@ -498,12 +508,7 @@ func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *data
 		//}
 		//to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 
-		var workGroupParam *string
-		workGroupParam = nil
-		if workGroup, ok := parameters.CheckGet("work_group"); ok {
-			temp := workGroup.MustString()
-			workGroupParam = &temp
-		}
+
 
 		limit := parameters.Get("limit").MustInt()
 		eli := &athena.ListQueryExecutionsInput{
