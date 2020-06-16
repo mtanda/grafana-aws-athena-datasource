@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -13,26 +14,28 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/aws/aws-sdk-go/service/athena"
+	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/grafana-plugin-model/go/datasource"
-	"github.com/grafana/grafana/pkg/components/simplejson"
-	plugin "github.com/hashicorp/go-plugin"
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
+	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
 type AwsAthenaDatasource struct {
-	plugin.NetRPCUnsupportedPlugin
+	queriesTotal *prometheus.CounterVec
 }
 
 type Target struct {
 	RefId           string
 	QueryType       string
-	Format          string
 	Region          string
 	Inputs          []athena.GetQueryResultsInput
 	TimestampColumn string
 	ValueColumn     string
 	LegendFormat    string
 	timeFormat      string
+	From            time.Time
+	To              time.Time
 }
 
 var (
@@ -44,65 +47,74 @@ func init() {
 	legendFormatPattern = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
 }
 
-func (t *AwsAthenaDatasource) Query(ctx context.Context, tsdbReq *datasource.DatasourceRequest) (*datasource.DatasourceResponse, error) {
-	modelJson, err := simplejson.NewJson([]byte(tsdbReq.Queries[0].ModelJson))
-	if err != nil {
-		return nil, err
-	}
+const metricNamespace = "aws_athena_datasource"
 
-	if modelJson.Get("queryType").MustString() == "metricFindQuery" {
-		response, err := t.metricFindQuery(ctx, tsdbReq, modelJson, tsdbReq.TimeRange)
-		if err != nil {
-			return &datasource.DatasourceResponse{
-				Results: []*datasource.QueryResult{
-					{
-						RefId: "metricFindQuery",
-						Error: err.Error(),
-					},
-				},
-			}, nil
-		}
-		return response, nil
-	}
+func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
+	ds := &AwsAthenaDatasource{}
 
-	response, err := t.handleQuery(tsdbReq)
-	if err != nil {
-		return &datasource.DatasourceResponse{
-			Results: []*datasource.QueryResult{
-				{
-					Error: err.Error(),
-				},
-			},
-		}, nil
-	}
+	ds.queriesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "data_query_total",
+			Help:      "data query counter",
+			Namespace: metricNamespace,
+		},
+		[]string{"region"},
+	)
+	prometheus.MustRegister(ds.queriesTotal)
 
-	return response, nil
+	mux.HandleFunc("/named_query_names", ds.handleResourceNamedQueryNames)
+	mux.HandleFunc("/named_query_queries", ds.handleResourceNamedQueryQueries)
+	mux.HandleFunc("/query_execution_ids", ds.handleResourceQueryExecutionIds)
+
+	return ds
 }
 
-func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest) (*datasource.DatasourceResponse, error) {
-	response := &datasource.DatasourceResponse{}
+func (ds *AwsAthenaDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
+	res := &backend.CheckHealthResult{}
+
+	if req.PluginContext.DataSourceInstanceSettings == nil {
+		res.Status = backend.HealthStatusOk
+		res.Message = "Plugin is Running"
+		return res, nil
+	}
+
+	svc, err := ds.getClient(req.PluginContext.DataSourceInstanceSettings, "us-east-1")
+	if err != nil {
+		res.Status = backend.HealthStatusError
+		res.Message = "Unable to create client"
+		return res, nil
+	}
+
+	_, err = svc.ListNamedQueries(&athena.ListNamedQueriesInput{})
+	if err != nil {
+		res.Status = backend.HealthStatusError
+		res.Message = "Unable to call Athena API"
+		return res, nil
+	}
+
+	res.Status = backend.HealthStatusOk
+	res.Message = "Success"
+	return res, nil
+}
+
+func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+	responses := &backend.QueryDataResponse{
+		Responses: map[string]backend.DataResponse{},
+	}
 
 	targets := make([]Target, 0)
 	for _, query := range tsdbReq.Queries {
 		target := Target{}
-		if err := json.Unmarshal([]byte(query.ModelJson), &target); err != nil {
+		if err := json.Unmarshal([]byte(query.JSON), &target); err != nil {
 			return nil, err
 		}
+		target.From = query.TimeRange.From
+		target.To = query.TimeRange.To
 		targets = append(targets, target)
 	}
 
-	fromRaw, err := strconv.ParseInt(tsdbReq.TimeRange.FromRaw, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	from := time.Unix(fromRaw/1000, fromRaw%1000*1000*1000)
-	toRaw, err := strconv.ParseInt(tsdbReq.TimeRange.ToRaw, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
 	for _, target := range targets {
-		svc, err := t.getClient(tsdbReq.Datasource, target.Region)
+		svc, err := ds.getClient(tsdbReq.PluginContext.DataSourceInstanceSettings, target.Region)
 		if err != nil {
 			return nil, err
 		}
@@ -142,6 +154,7 @@ func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest)
 			}
 			result.ResultSet.ResultSetMetadata = resp.ResultSet.ResultSetMetadata
 			result.ResultSet.Rows = append(result.ResultSet.Rows, resp.ResultSet.Rows[1:]...)
+			ds.queriesTotal.With(prometheus.Labels{"region": target.Region}).Inc()
 		}
 
 		timeFormat := target.timeFormat
@@ -149,146 +162,171 @@ func (t *AwsAthenaDatasource) handleQuery(tsdbReq *datasource.DatasourceRequest)
 			timeFormat = time.RFC3339Nano
 		}
 
-		switch target.Format {
-		case "timeserie":
-			r, err := parseTimeSeriesResponse(&result, target.RefId, from, to, target.TimestampColumn, target.ValueColumn, target.LegendFormat, timeFormat)
-			if err != nil {
-				return nil, err
+		if frames, err := parseResponse(&result, target.RefId, target.From, target.To, target.TimestampColumn, target.ValueColumn, target.LegendFormat, timeFormat); err != nil {
+			responses.Responses[target.RefId] = backend.DataResponse{
+				Error: err,
 			}
-			response.Results = append(response.Results, r)
-		case "table":
-			r, err := parseTableResponse(&result, target.RefId, from, to, target.TimestampColumn, timeFormat)
-			if err != nil {
-				return nil, err
+		} else {
+			responses.Responses[target.RefId] = backend.DataResponse{
+				Frames: append(responses.Responses[target.RefId].Frames, frames...),
 			}
-			response.Results = append(response.Results, r)
 		}
 	}
 
-	return response, nil
+	return responses, nil
 }
 
-func parseTimeSeriesResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, valueColumn string, legendFormat string, timeFormat string) (*datasource.QueryResult, error) {
-	series := make(map[string]*datasource.TimeSeries)
+func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, valueColumn string, legendFormat string, timeFormat string) ([]*data.Frame, error) {
+	warnings := []string{}
 
-	for _, r := range resp.ResultSet.Rows {
-		var t time.Time
-		var timestamp int64
-		var value float64
-		var err error
+	timeFieldConverter := data.FieldConverter{
+		OutputFieldType: data.FieldTypeNullableTime,
+		Converter: func(v interface{}) (interface{}, error) {
+			val, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string input but got type %T", v)
+			}
+			if t, err := time.Parse(timeFormat, val); err != nil {
+				return nil, err
+			} else {
+				return &t, nil
+			}
+		},
+	}
 
+	timestampIndex := -1
+	converters := make([]data.FieldConverter, len(resp.ResultSet.ResultSetMetadata.ColumnInfo))
+	for i, c := range resp.ResultSet.ResultSetMetadata.ColumnInfo {
+		fc, ok := converterMap[*c.Type]
+		if !ok {
+			warning := fmt.Sprintf("unknown column type: %s", *c.Type)
+			warnings = append(warnings, warning)
+			fc = data.AsStringFieldConverter
+		}
+		if *c.Name == timestampColumn {
+			fc = timeFieldConverter
+			timestampIndex = i
+		}
+		if *c.Name == valueColumn {
+			fc = floatFieldConverter
+		}
+		converters[i] = fc
+	}
+
+	if timestampIndex != -1 {
+		sort.Slice(resp.ResultSet.Rows, func(i, j int) bool {
+			return resp.ResultSet.Rows[i].Data[timestampIndex].VarCharValue != nil && resp.ResultSet.Rows[j].Data[timestampIndex].VarCharValue != nil && *resp.ResultSet.Rows[i].Data[timestampIndex].VarCharValue < *resp.ResultSet.Rows[j].Data[timestampIndex].VarCharValue
+		})
+	}
+
+	fieldNames := make([]string, 0)
+	for _, column := range resp.ResultSet.ResultSetMetadata.ColumnInfo {
+		fieldNames = append(fieldNames, *column.Name)
+	}
+
+	ficm := make(map[string]*data.FrameInputConverter)
+	for rowIdx, row := range resp.ResultSet.Rows {
 		kv := make(map[string]string)
-		for j, d := range r.Data {
-			if d == nil || d.VarCharValue == nil {
+		var timestamp time.Time
+		for columnIdx, cell := range row.Data {
+			if cell == nil || cell.VarCharValue == nil {
 				continue
 			}
-
-			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
-			switch columnName {
-			case timestampColumn:
-				t, err = time.Parse(timeFormat, *d.VarCharValue)
+			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[columnIdx].Name
+			if columnName == timestampColumn {
+				var err error
+				timestamp, err = time.Parse(time.RFC3339, *cell.VarCharValue)
 				if err != nil {
 					return nil, err
 				}
-				timestamp = t.Unix() * 1000
-			case valueColumn:
-				value, err = strconv.ParseFloat(*d.VarCharValue, 64)
-				if err != nil {
-					return nil, err
+			}
+			if columnName == timestampColumn || columnName == valueColumn {
+				continue
+			}
+			kv[columnName] = *cell.VarCharValue
+		}
+		if timestampColumn != "" && (timestamp.IsZero() || (timestamp.Before(from) || timestamp.After(to))) {
+			continue // out of range data
+		}
+		name := formatLegend(kv, legendFormat)
+		if inputConverter, ok := ficm[name]; !ok {
+			inputConverter, err := data.NewFrameInputConverter(converters, len(resp.ResultSet.Rows))
+			if err != nil {
+				return nil, err
+			}
+			frame := inputConverter.Frame
+			frame.RefID = refId
+			frame.Name = name
+			meta := make(map[string]interface{})
+			meta["warnings"] = warnings
+			frame.Meta = &data.FrameMeta{Custom: meta}
+			err = inputConverter.Frame.SetFieldNames(fieldNames...)
+			if err != nil {
+				return nil, err
+			}
+			ficm[name] = inputConverter
+		} else {
+			for columnIdx, cell := range row.Data {
+				if cell == nil || cell.VarCharValue == nil {
+					continue
 				}
-			default:
-				if d != nil {
-					kv[columnName] = *d.VarCharValue
+				if err := inputConverter.Set(columnIdx, rowIdx, *cell.VarCharValue); err != nil {
+					return nil, err
 				}
 			}
 		}
-
-		if !t.IsZero() && (t.Before(from) || t.After(to)) {
-			continue // out of range data
-		}
-
-		name := formatLegend(kv, legendFormat)
-		if (series[name]) == nil {
-			series[name] = &datasource.TimeSeries{Name: name, Tags: kv}
-		}
-
-		series[name].Points = append(series[name].Points, &datasource.Point{
-			Timestamp: timestamp,
-			Value:     value,
-		})
 	}
 
-	s := make([]*datasource.TimeSeries, 0)
-	for _, ss := range series {
-		sort.Slice(ss.Points, func(i, j int) bool {
-			return ss.Points[i].Timestamp < ss.Points[j].Timestamp
-		})
-		s = append(s, ss)
+	frames := make([]*data.Frame, 0)
+	for _, fic := range ficm {
+		frames = append(frames, fic.Frame)
 	}
 
-	return &datasource.QueryResult{
-		RefId:  refId,
-		Series: s,
-	}, nil
+	return frames, nil
 }
 
-func parseTableResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, timeFormat string) (*datasource.QueryResult, error) {
-	table := &datasource.Table{}
+var converterMap = map[string]data.FieldConverter{
+	"varchar": stringFieldConverter,
+	"integer": intFieldConverter,
+	"double":  floatFieldConverter,
+	"boolean": boolFieldConverter,
+}
 
-	for _, c := range resp.ResultSet.ResultSetMetadata.ColumnInfo {
-		table.Columns = append(table.Columns, &datasource.TableColumn{Name: *c.Name})
-	}
-	for _, r := range resp.ResultSet.Rows {
-		var timestamp time.Time
-		var err error
-		row := &datasource.TableRow{}
-		for j, d := range r.Data {
-			if d == nil || d.VarCharValue == nil {
-				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_NULL})
-				continue
-			}
+var stringFieldConverter = data.FieldConverter{
+	OutputFieldType: data.FieldTypeString,
+}
 
-			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Name
-			if columnName == timestampColumn {
-				timestamp, err = time.Parse(timeFormat, *d.VarCharValue)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			switch *resp.ResultSet.ResultSetMetadata.ColumnInfo[j].Type {
-			case "integer":
-				v, err := strconv.ParseInt(*d.VarCharValue, 10, 64)
-				if err != nil {
-					return nil, err
-				}
-				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_INT64, Int64Value: v})
-			case "double":
-				v, err := strconv.ParseFloat(*d.VarCharValue, 64)
-				if err != nil {
-					return nil, err
-				}
-				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_DOUBLE, DoubleValue: v})
-			case "boolean":
-				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_BOOL, BoolValue: *d.VarCharValue == "true"})
-			case "varchar":
-				fallthrough
-			default:
-				row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_STRING, StringValue: *d.VarCharValue})
-			}
+var intFieldConverter = data.FieldConverter{
+	OutputFieldType: data.FieldTypeInt64,
+	Converter: func(v interface{}) (interface{}, error) {
+		val, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string input but got type %T", v)
 		}
+		return strconv.ParseInt(val, 10, 64)
+	},
+}
 
-		if !timestamp.IsZero() && (timestamp.Before(from) || timestamp.After(to)) {
-			continue // out of range data
+var floatFieldConverter = data.FieldConverter{
+	OutputFieldType: data.FieldTypeFloat64,
+	Converter: func(v interface{}) (interface{}, error) {
+		val, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string input but got type %T", v)
 		}
+		return strconv.ParseFloat(val, 64)
+	},
+}
 
-		table.Rows = append(table.Rows, row)
-	}
-
-	return &datasource.QueryResult{
-		RefId:  refId,
-		Tables: []*datasource.Table{table},
-	}, nil
+var boolFieldConverter = data.FieldConverter{
+	OutputFieldType: data.FieldTypeBool,
+	Converter: func(v interface{}) (interface{}, error) {
+		val, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string input but got type %T", v)
+		}
+		return val == "true", nil
+	},
 }
 
 func formatLegend(kv map[string]string, legendFormat string) string {
@@ -314,149 +352,195 @@ func formatLegend(kv map[string]string, legendFormat string) string {
 	return string(result)
 }
 
-type suggestData struct {
-	Text  string
-	Value string
-}
-
-func (t *AwsAthenaDatasource) metricFindQuery(ctx context.Context, tsdbReq *datasource.DatasourceRequest, parameters *simplejson.Json, timeRange *datasource.TimeRange) (*datasource.DatasourceResponse, error) {
-	region := parameters.Get("region").MustString()
-	svc, err := t.getClient(tsdbReq.Datasource, region)
+func writeResult(rw http.ResponseWriter, path string, val interface{}, err error) {
+	response := make(map[string]interface{})
+	code := http.StatusOK
 	if err != nil {
-		return nil, err
+		response["error"] = err.Error()
+		code = http.StatusBadRequest
+	} else {
+		response[path] = val
 	}
 
-	subtype := parameters.Get("subtype").MustString()
-
-	data := make([]suggestData, 0)
-	switch subtype {
-	case "named_query_names":
-		li := &athena.ListNamedQueriesInput{}
-		lo := &athena.ListNamedQueriesOutput{}
-		err = svc.ListNamedQueriesPages(li,
-			func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
-				lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
-				return !lastPage
-			})
-		if err != nil {
-			return nil, err
-		}
-		for i := 0; i < len(lo.NamedQueryIds); i += 50 {
-			e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
-			bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
-			bo, err := svc.BatchGetNamedQuery(bi)
-			if err != nil {
-				return nil, err
-			}
-			for _, q := range bo.NamedQueries {
-				data = append(data, suggestData{Text: *q.Name, Value: *q.Name})
-			}
-		}
-	case "named_query_queries":
-		pattern := parameters.Get("pattern").MustString()
-		r := regexp.MustCompile(pattern)
-		li := &athena.ListNamedQueriesInput{}
-		lo := &athena.ListNamedQueriesOutput{}
-		err = svc.ListNamedQueriesPages(li,
-			func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
-				lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
-				return !lastPage
-			})
-		if err != nil {
-			return nil, err
-		}
-		for i := 0; i < len(lo.NamedQueryIds); i += 50 {
-			e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
-			bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
-			bo, err := svc.BatchGetNamedQuery(bi)
-			if err != nil {
-				return nil, err
-			}
-			for _, q := range bo.NamedQueries {
-				if r.MatchString(*q.Name) {
-					data = append(data, suggestData{Text: *q.QueryString, Value: *q.QueryString})
-				}
-			}
-		}
-	case "query_execution_ids":
-		toRaw, err := strconv.ParseInt(timeRange.ToRaw, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
-
-		pattern := parameters.Get("pattern").MustString()
-		var workGroupParam *string
-		workGroupParam = nil
-		if workGroup, ok := parameters.CheckGet("work_group"); ok {
-			temp := workGroup.MustString()
-			workGroupParam = &temp
-		}
-		r := regexp.MustCompile(pattern)
-		limit := parameters.Get("limit").MustInt()
-		li := &athena.ListQueryExecutionsInput{
-			WorkGroup: workGroupParam,
-		}
-		lo := &athena.ListQueryExecutionsOutput{}
-		err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
-			func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
-				lo.QueryExecutionIds = append(lo.QueryExecutionIds, page.QueryExecutionIds...)
-				return !lastPage
-			})
-		fbo := make([]*athena.QueryExecution, 0)
-		for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
-			e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
-			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
-			bo, err := svc.BatchGetQueryExecution(bi)
-			if err != nil {
-				return nil, err
-			}
-			for _, q := range bo.QueryExecutions {
-				if *q.Status.State != "SUCCEEDED" {
-					continue
-				}
-				if (*q.Status.CompletionDateTime).After(to) {
-					continue
-				}
-				if r.MatchString(*q.Query) {
-					fbo = append(fbo, q)
-				}
-			}
-		}
-		sort.Slice(fbo, func(i, j int) bool {
-			return fbo[i].Status.CompletionDateTime.After(*fbo[j].Status.CompletionDateTime)
-		})
-		limit = int(math.Min(float64(limit), float64(len(fbo))))
-		for _, q := range fbo[0:limit] {
-			data = append(data, suggestData{Text: *q.QueryExecutionId, Value: *q.QueryExecutionId})
-		}
+	body, err := json.Marshal(response)
+	if err != nil {
+		body = []byte(err.Error())
+		code = http.StatusInternalServerError
 	}
-
-	table := t.transformToTable(data)
-
-	return &datasource.DatasourceResponse{
-		Results: []*datasource.QueryResult{
-			{
-				RefId:  "metricFindQuery",
-				Tables: []*datasource.Table{table},
-			},
-		},
-	}, nil
+	_, err = rw.Write(body)
+	if err != nil {
+		code = http.StatusInternalServerError
+	}
+	rw.WriteHeader(code)
 }
 
-func (t *AwsAthenaDatasource) transformToTable(data []suggestData) *datasource.Table {
-	table := &datasource.Table{
-		Columns: make([]*datasource.TableColumn, 0),
-		Rows:    make([]*datasource.TableRow, 0),
+func (ds *AwsAthenaDatasource) handleResourceNamedQueryNames(rw http.ResponseWriter, req *http.Request) {
+	backend.Logger.Debug("Received resource call", "url", req.URL.String(), "method", req.Method)
+	if req.Method != http.MethodGet {
+		return
 	}
-	table.Columns = append(table.Columns, &datasource.TableColumn{Name: "text"})
-	table.Columns = append(table.Columns, &datasource.TableColumn{Name: "value"})
 
-	for _, r := range data {
-		row := &datasource.TableRow{}
-		row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_STRING, StringValue: r.Text})
-		row.Values = append(row.Values, &datasource.RowValue{Kind: datasource.RowValue_TYPE_STRING, StringValue: r.Value})
-		table.Rows = append(table.Rows, row)
+	ctx := req.Context()
+	pluginContext := httpadapter.PluginConfigFromContext(ctx)
+	urlQuery := req.URL.Query()
+	region := urlQuery.Get("region")
+
+	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
 	}
-	return table
+
+	data := make([]string, 0)
+	li := &athena.ListNamedQueriesInput{}
+	lo := &athena.ListNamedQueriesOutput{}
+	if err := svc.ListNamedQueriesPages(li,
+		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
+			lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
+			return !lastPage
+		}); err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
+		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
+		bo, err := svc.BatchGetNamedQuery(bi)
+		if err != nil {
+			writeResult(rw, "?", nil, err)
+			return
+		}
+		for _, q := range bo.NamedQueries {
+			data = append(data, *q.Name)
+		}
+	}
+	writeResult(rw, "named_query_names", data, err)
+}
+
+func (ds *AwsAthenaDatasource) handleResourceNamedQueryQueries(rw http.ResponseWriter, req *http.Request) {
+	backend.Logger.Debug("Received resource call", "url", req.URL.String(), "method", req.Method)
+	if req.Method != http.MethodGet {
+		return
+	}
+
+	ctx := req.Context()
+	pluginContext := httpadapter.PluginConfigFromContext(ctx)
+	urlQuery := req.URL.Query()
+	region := urlQuery.Get("region")
+	pattern := urlQuery.Get("pattern")
+
+	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+
+	data := make([]string, 0)
+	r := regexp.MustCompile(pattern)
+	li := &athena.ListNamedQueriesInput{}
+	lo := &athena.ListNamedQueriesOutput{}
+	err = svc.ListNamedQueriesPages(li,
+		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
+			lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
+			return !lastPage
+		})
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
+		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
+		bo, err := svc.BatchGetNamedQuery(bi)
+		if err != nil {
+			writeResult(rw, "?", nil, err)
+			return
+		}
+		for _, q := range bo.NamedQueries {
+			if r.MatchString(*q.Name) {
+				data = append(data, *q.QueryString)
+			}
+		}
+	}
+	writeResult(rw, "named_query_queries", data, err)
+}
+
+func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseWriter, req *http.Request) {
+	backend.Logger.Debug("Received resource call", "url", req.URL.String(), "method", req.Method)
+	if req.Method != http.MethodGet {
+		return
+	}
+
+	ctx := req.Context()
+	pluginContext := httpadapter.PluginConfigFromContext(ctx)
+	urlQuery := req.URL.Query()
+	region := urlQuery.Get("region")
+	pattern := urlQuery.Get("pattern")
+	limit, err := strconv.ParseInt(urlQuery.Get("limit"), 10, 64)
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+	workGroup := urlQuery.Get("workGroup")
+	to, err := time.Parse(time.RFC3339, urlQuery.Get("to"))
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+
+	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+
+	data := make([]string, 0)
+	var workGroupParam *string
+	workGroupParam = nil
+	if workGroup != "" {
+		workGroupParam = &workGroup
+	}
+	r := regexp.MustCompile(pattern)
+	li := &athena.ListQueryExecutionsInput{
+		WorkGroup: workGroupParam,
+	}
+	lo := &athena.ListQueryExecutionsOutput{}
+	err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
+		func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
+			lo.QueryExecutionIds = append(lo.QueryExecutionIds, page.QueryExecutionIds...)
+			return !lastPage
+		})
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+	fbo := make([]*athena.QueryExecution, 0)
+	for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
+		e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
+		bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
+		bo, err := svc.BatchGetQueryExecution(bi)
+		if err != nil {
+			writeResult(rw, "?", nil, err)
+			return
+		}
+		for _, q := range bo.QueryExecutions {
+			if *q.Status.State != "SUCCEEDED" {
+				continue
+			}
+			if (*q.Status.CompletionDateTime).After(to) {
+				continue
+			}
+			if r.MatchString(*q.Query) {
+				fbo = append(fbo, q)
+			}
+		}
+	}
+	sort.Slice(fbo, func(i, j int) bool {
+		return fbo[i].Status.CompletionDateTime.After(*fbo[j].Status.CompletionDateTime)
+	})
+	limit = int64(math.Min(float64(limit), float64(len(fbo))))
+	for _, q := range fbo[0:limit] {
+		data = append(data, *q.QueryExecutionId)
+	}
+	writeResult(rw, "query_execution_ids", data, err)
 }
