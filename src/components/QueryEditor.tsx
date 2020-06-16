@@ -1,18 +1,12 @@
 import React, { PureComponent } from 'react';
-import { QueryEditorProps, SelectableValue } from '@grafana/data';
-import { Select, InlineFormLabel } from '@grafana/ui';
+import { QueryEditorProps } from '@grafana/data';
+import { InlineFormLabel } from '@grafana/ui';
 import { DataSource } from '../datasource';
 import { AwsAthenaQuery, AwsAthenaOptions } from '../types';
 
 type Props = QueryEditorProps<DataSource, AwsAthenaQuery, AwsAthenaOptions>;
 
-const FORMAT_OPTIONS: Array<SelectableValue<string>> = [
-  { label: 'Time series', value: 'timeserie' },
-  { label: 'Table', value: 'table' },
-];
-
 interface State {
-  formatOption: SelectableValue<string>;
   region: string;
   queryExecutionId: string;
   timestampColumn: string;
@@ -38,7 +32,6 @@ export class QueryEditor extends PureComponent<Props, State> {
     const query = Object.assign({}, defaultQuery, props.query);
     this.query = query;
     this.state = {
-      formatOption: FORMAT_OPTIONS.find(option => option.value === query.format) || FORMAT_OPTIONS[0],
       region: query.region,
       queryExecutionId: query.queryExecutionId,
       timestampColumn: query.timestampColumn,
@@ -47,11 +40,6 @@ export class QueryEditor extends PureComponent<Props, State> {
       timeFormat: query.timeFormat,
     };
   }
-
-  onFormatChange = (option: SelectableValue<string>) => {
-    this.query.format = option.value || 'timeserie';
-    this.setState({ formatOption: option }, this.onRunQuery);
-  };
 
   onRegionChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
     const region = e.currentTarget.value;
@@ -96,29 +84,10 @@ export class QueryEditor extends PureComponent<Props, State> {
   };
 
   render() {
-    const {
-      formatOption,
-      region,
-      queryExecutionId,
-      timestampColumn,
-      valueColumn,
-      legendFormat,
-      timeFormat,
-    } = this.state;
+    const { region, queryExecutionId, timestampColumn, valueColumn, legendFormat, timeFormat } = this.state;
     return (
       <>
         <div className="gf-form-inline">
-          <div className="gf-form">
-            <InlineFormLabel width={8}>Format</InlineFormLabel>
-            <Select
-              width={16}
-              isSearchable={false}
-              options={FORMAT_OPTIONS}
-              onChange={this.onFormatChange}
-              value={formatOption}
-            />
-          </div>
-
           <div className="gf-form">
             <InlineFormLabel width={8}>Query Execution Id</InlineFormLabel>
             <input
