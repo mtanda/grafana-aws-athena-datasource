@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/aws/aws-sdk-go/service/athena"
+	"github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -22,6 +24,7 @@ import (
 )
 
 type AwsAthenaDatasource struct {
+	cache        *cache.Cache
 	queriesTotal *prometheus.CounterVec
 }
 
@@ -33,9 +36,10 @@ type Target struct {
 	TimestampColumn string
 	ValueColumn     string
 	LegendFormat    string
-	timeFormat      string
+	TimeFormat      string
 	From            time.Time
 	To              time.Time
+	CacheDuration   Duration
 }
 
 var (
@@ -50,7 +54,9 @@ func init() {
 const metricNamespace = "aws_athena_datasource"
 
 func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
-	ds := &AwsAthenaDatasource{}
+	ds := &AwsAthenaDatasource{
+		cache: cache.New(300*time.Second, 5*time.Second),
+	}
 
 	ds.queriesTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -148,16 +154,30 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 			},
 		}
 		for _, input := range target.Inputs {
-			resp, err := svc.GetQueryResults(&input)
-			if err != nil {
-				return nil, err
+			var resp *athena.GetQueryResultsOutput
+			var err error
+
+			cacheKey := *input.QueryExecutionId
+			if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
+				resp = item.(*athena.GetQueryResultsOutput)
+			} else {
+				resp, err = svc.GetQueryResults(&input)
+				if err != nil {
+					return nil, err
+				}
+
+				ds.queriesTotal.With(prometheus.Labels{"region": target.Region}).Inc()
+
+				if target.CacheDuration > 0 {
+					ds.cache.Set(cacheKey, resp, time.Duration(target.CacheDuration)*time.Second)
+				}
 			}
+
 			result.ResultSet.ResultSetMetadata = resp.ResultSet.ResultSetMetadata
 			result.ResultSet.Rows = append(result.ResultSet.Rows, resp.ResultSet.Rows[1:]...)
-			ds.queriesTotal.With(prometheus.Labels{"region": target.Region}).Inc()
 		}
 
-		timeFormat := target.timeFormat
+		timeFormat := target.TimeFormat
 		if timeFormat == "" {
 			timeFormat = time.RFC3339Nano
 		}
@@ -543,4 +563,27 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseW
 		data = append(data, *q.QueryExecutionId)
 	}
 	writeResult(rw, "query_execution_ids", data, err)
+}
+
+type Duration time.Duration
+
+func (d *Duration) UnmarshalJSON(b []byte) error {
+	var v interface{}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	switch value := v.(type) {
+	case string:
+		if value == "" {
+			value = "0s"
+		}
+		tmp, err := time.ParseDuration(value)
+		if err != nil {
+			return err
+		}
+		*d = Duration(tmp)
+		return nil
+	default:
+		return errors.New("invalid duration")
+	}
 }
