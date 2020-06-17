@@ -20,12 +20,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/sts"
 )
 
-type cache struct {
+type credentialCache struct {
 	credential *credentials.Credentials
 	expiration *time.Time
 }
 
-var awsCredentialCache = make(map[string]cache)
+var awsCredentialCache = make(map[string]credentialCache)
 var credentialCacheLock sync.RWMutex
 
 type DatasourceInfo struct {
@@ -119,7 +119,7 @@ func GetCredentials(dsInfo *DatasourceInfo) (*credentials.Credentials, error) {
 		})
 
 	credentialCacheLock.Lock()
-	awsCredentialCache[cacheKey] = cache{
+	awsCredentialCache[cacheKey] = credentialCache{
 		credential: creds,
 		expiration: expiration,
 	}
