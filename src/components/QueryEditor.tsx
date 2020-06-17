@@ -13,6 +13,7 @@ interface State {
   valueColumn: string;
   legendFormat: string;
   timeFormat: string;
+  cacheDuration: string;
 }
 
 export class QueryEditor extends PureComponent<Props, State> {
@@ -28,6 +29,7 @@ export class QueryEditor extends PureComponent<Props, State> {
       valueColumn: '',
       legendFormat: '',
       timeFormat: '',
+      cacheDuration: '',
     };
     const query = Object.assign({}, defaultQuery, props.query);
     this.query = query;
@@ -38,6 +40,7 @@ export class QueryEditor extends PureComponent<Props, State> {
       valueColumn: query.valueColumn,
       legendFormat: query.legendFormat,
       timeFormat: query.timeFormat,
+      cacheDuration: query.cacheDuration,
     };
   }
 
@@ -77,6 +80,12 @@ export class QueryEditor extends PureComponent<Props, State> {
     this.setState({ timeFormat });
   };
 
+  onCacheDurationChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
+    const cacheDuration = e.currentTarget.value;
+    this.query.cacheDuration = cacheDuration;
+    this.setState({ cacheDuration });
+  };
+
   onRunQuery = () => {
     const { query } = this;
     this.props.onChange(query);
@@ -84,7 +93,15 @@ export class QueryEditor extends PureComponent<Props, State> {
   };
 
   render() {
-    const { region, queryExecutionId, timestampColumn, valueColumn, legendFormat, timeFormat } = this.state;
+    const {
+      region,
+      queryExecutionId,
+      timestampColumn,
+      valueColumn,
+      legendFormat,
+      timeFormat,
+      cacheDuration,
+    } = this.state;
     return (
       <>
         <div className="gf-form-inline">
@@ -157,7 +174,19 @@ export class QueryEditor extends PureComponent<Props, State> {
               className="gf-form-input"
               placeholder=""
               value={timeFormat}
-              onChange={this.onTimestampColumnChange}
+              onChange={this.onTimeFormatChange}
+              onBlur={this.onRunQuery}
+            />
+          </div>
+
+          <div className="gf-form">
+            <InlineFormLabel width={8}>Cache Duration</InlineFormLabel>
+            <input
+              type="text"
+              className="gf-form-input"
+              placeholder="0s"
+              value={cacheDuration}
+              onChange={this.onCacheDurationChange}
               onBlur={this.onRunQuery}
             />
           </div>

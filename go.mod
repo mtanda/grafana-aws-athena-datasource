@@ -13,6 +13,8 @@ require (
 	github.com/hashicorp/go-plugin v1.2.2
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus/client_golang v1.3.0
-	golang.org/x/net v0.0.0-20190923162816-aa69164e4478
+	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
+	google.golang.org/api v0.27.0
 )
