@@ -43,7 +43,6 @@ type Target struct {
 
 var (
 	legendFormatPattern *regexp.Regexp
-	clientCache         = make(map[string]*athena.Athena)
 )
 
 func init() {
@@ -159,8 +158,17 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 			cacheKey := *input.QueryExecutionId
 			if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
 				resp = item.(*athena.GetQueryResultsOutput)
+				result.ResultSet.ResultSetMetadata = resp.ResultSet.ResultSetMetadata
+				result.ResultSet.Rows = append(result.ResultSet.Rows, resp.ResultSet.Rows[1:]...)
 			} else {
-				resp, err = svc.GetQueryResults(&input)
+				//resp, err = svc.GetQueryResults(&input)
+
+				err = svc.GetQueryResultsPages(&input,
+					func(page *athena.GetQueryResultsOutput, lastPage bool) bool {
+						result.ResultSet.ResultSetMetadata = page.ResultSet.ResultSetMetadata
+						result.ResultSet.Rows = append(result.ResultSet.Rows, page.ResultSet.Rows[1:]...)
+						return !lastPage
+					})
 				if err != nil {
 					return nil, err
 				}
@@ -171,9 +179,6 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 					ds.cache.Set(cacheKey, resp, time.Duration(target.CacheDuration)*time.Second)
 				}
 			}
-
-			result.ResultSet.ResultSetMetadata = resp.ResultSet.ResultSetMetadata
-			result.ResultSet.Rows = append(result.ResultSet.Rows, resp.ResultSet.Rows[1:]...)
 		}
 
 		timeFormat := target.TimeFormat
