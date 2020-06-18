@@ -30,7 +30,6 @@ type AwsAthenaDatasource struct {
 
 type Target struct {
 	RefId           string
-	QueryType       string
 	Region          string
 	Inputs          []athena.GetQueryResultsInput
 	TimestampColumn string

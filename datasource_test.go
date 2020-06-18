@@ -17,10 +17,9 @@ func TestAwsAthenaDatasource(t *testing.T) {
 		t.Run("simple query", func(t *testing.T) {
 			ctx := context.Background()
 			q, _ := json.Marshal(Target{
-				RefId:     "A",
-				QueryType: "timeSeriesQuery",
-				Format:    "timeserie",
-				Region:    "us-east-1",
+				RefId:  "A",
+				Format: "timeserie",
+				Region: "us-east-1",
 				Inputs: []athena.GetQueryResultsInput{
 					athena.GetQueryResultsInput{
 						QueryExecutionId: aws.String("43bcaae3-22f0-4dcf-a861-bbab3084d6a2"),
