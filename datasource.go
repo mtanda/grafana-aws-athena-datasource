@@ -307,6 +307,7 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 var converterMap = map[string]data.FieldConverter{
 	"varchar": stringFieldConverter,
 	"integer": intFieldConverter,
+	"bigint":  intFieldConverter,
 	"double":  floatFieldConverter,
 	"boolean": boolFieldConverter,
 }
