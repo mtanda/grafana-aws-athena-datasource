@@ -198,21 +198,6 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, valueColumn string, legendFormat string, timeFormat string) ([]*data.Frame, error) {
 	warnings := []string{}
 
-	timeFieldConverter := data.FieldConverter{
-		OutputFieldType: data.FieldTypeNullableTime,
-		Converter: func(v interface{}) (interface{}, error) {
-			val, ok := v.(string)
-			if !ok {
-				return nil, fmt.Errorf("expected string input but got type %T", v)
-			}
-			if t, err := time.Parse(timeFormat, val); err != nil {
-				return nil, err
-			} else {
-				return &t, nil
-			}
-		},
-	}
-
 	timestampIndex := -1
 	converters := make([]data.FieldConverter, len(resp.ResultSet.ResultSetMetadata.ColumnInfo))
 	for i, c := range resp.ResultSet.ResultSetMetadata.ColumnInfo {
@@ -222,8 +207,8 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 			warnings = append(warnings, warning)
 			fc = data.AsStringFieldConverter
 		}
-		if *c.Name == timestampColumn {
-			fc = timeFieldConverter
+		if *c.Name == timestampColumn && *c.Type == "varchar" {
+			fc = genTimeFieldConverter(timeFormat)
 			timestampIndex = i
 		}
 		if *c.Name == valueColumn {
@@ -305,11 +290,33 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 }
 
 var converterMap = map[string]data.FieldConverter{
-	"varchar": stringFieldConverter,
-	"integer": intFieldConverter,
-	"bigint":  intFieldConverter,
-	"double":  floatFieldConverter,
-	"boolean": boolFieldConverter,
+	"varchar":   stringFieldConverter,
+	"integer":   intFieldConverter,
+	"tinyint":   intFieldConverter,
+	"smallint":  intFieldConverter,
+	"bigint":    intFieldConverter,
+	"float":     floatFieldConverter,
+	"double":    floatFieldConverter,
+	"boolean":   boolFieldConverter,
+	"date":      genTimeFieldConverter("2006-01-02"),
+	"timestamp": genTimeFieldConverter("2006-01-02 15:04:05.000"),
+}
+
+func genTimeFieldConverter(timeFormat string) data.FieldConverter {
+	return data.FieldConverter{
+		OutputFieldType: data.FieldTypeNullableTime,
+		Converter: func(v interface{}) (interface{}, error) {
+			val, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string input but got type %T", v)
+			}
+			if t, err := time.Parse(timeFormat, val); err != nil {
+				return nil, err
+			} else {
+				return &t, nil
+			}
+		},
+	}
 }
 
 var stringFieldConverter = data.FieldConverter{
