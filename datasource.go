@@ -36,9 +36,10 @@ type Target struct {
 	ValueColumn     string
 	LegendFormat    string
 	TimeFormat      string
+	MaxRows         string
+	CacheDuration   Duration
 	From            time.Time
 	To              time.Time
-	CacheDuration   Duration
 }
 
 var (
@@ -147,6 +148,10 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 			}
 		}
 
+		maxRows, err := strconv.ParseInt(target.MaxRows, 10, 64)
+		if err != nil {
+			return nil, err
+		}
 		result := athena.GetQueryResultsOutput{
 			ResultSet: &athena.ResultSet{
 				Rows: make([]*athena.Row, 0),
@@ -154,18 +159,29 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 		}
 		for _, input := range target.Inputs {
 			var resp *athena.GetQueryResultsOutput
-			var err error
 
-			cacheKey := *input.QueryExecutionId
+			cacheKey := target.Region + "/" + *input.QueryExecutionId + "/" + target.MaxRows
 			if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
 				resp = item.(*athena.GetQueryResultsOutput)
 			} else {
-				resp, err = svc.GetQueryResults(&input)
+				err := svc.GetQueryResultsPagesWithContext(ctx, &input,
+					func(page *athena.GetQueryResultsOutput, lastPage bool) bool {
+						ds.queriesTotal.With(prometheus.Labels{"region": target.Region}).Inc()
+						if resp == nil {
+							resp = page
+						} else {
+							resp.ResultSet.Rows = append(resp.ResultSet.Rows, page.ResultSet.Rows...)
+						}
+						// result include extra header row, +1 here
+						if maxRows != -1 && int64(len(resp.ResultSet.Rows)) > maxRows+1 {
+							resp.ResultSet.Rows = resp.ResultSet.Rows[0 : maxRows+1]
+							return false
+						}
+						return !lastPage
+					})
 				if err != nil {
 					return nil, err
 				}
-
-				ds.queriesTotal.With(prometheus.Labels{"region": target.Region}).Inc()
 
 				if target.CacheDuration > 0 {
 					ds.cache.Set(cacheKey, resp, time.Duration(target.CacheDuration)*time.Second)
@@ -173,7 +189,7 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 			}
 
 			result.ResultSet.ResultSetMetadata = resp.ResultSet.ResultSetMetadata
-			result.ResultSet.Rows = append(result.ResultSet.Rows, resp.ResultSet.Rows[1:]...)
+			result.ResultSet.Rows = append(result.ResultSet.Rows, resp.ResultSet.Rows[1:]...) // trim header row
 		}
 
 		timeFormat := target.TimeFormat
@@ -253,8 +269,10 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 			continue // out of range data
 		}
 		name := formatLegend(kv, legendFormat)
-		if inputConverter, ok := ficm[name]; !ok {
-			inputConverter, err := data.NewFrameInputConverter(converters, len(resp.ResultSet.Rows))
+		inputConverter, ok := ficm[name]
+		if !ok {
+			var err error
+			inputConverter, err = data.NewFrameInputConverter(converters, len(resp.ResultSet.Rows))
 			if err != nil {
 				return nil, err
 			}
@@ -269,14 +287,13 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 				return nil, err
 			}
 			ficm[name] = inputConverter
-		} else {
-			for columnIdx, cell := range row.Data {
-				if cell == nil || cell.VarCharValue == nil {
-					continue
-				}
-				if err := inputConverter.Set(columnIdx, rowIdx, *cell.VarCharValue); err != nil {
-					return nil, err
-				}
+		}
+		for columnIdx, cell := range row.Data {
+			if cell == nil || cell.VarCharValue == nil {
+				continue
+			}
+			if err := inputConverter.Set(columnIdx, rowIdx, *cell.VarCharValue); err != nil {
+				return nil, err
 			}
 		}
 	}

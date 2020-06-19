@@ -13,6 +13,7 @@ interface State {
   valueColumn: string;
   legendFormat: string;
   timeFormat: string;
+  maxRows: string;
   cacheDuration: string;
 }
 
@@ -29,6 +30,7 @@ export class QueryEditor extends PureComponent<Props, State> {
       valueColumn: '',
       legendFormat: '',
       timeFormat: '',
+      maxRows: '1000',
       cacheDuration: '',
     };
     const query = Object.assign({}, defaultQuery, props.query);
@@ -40,6 +42,7 @@ export class QueryEditor extends PureComponent<Props, State> {
       valueColumn: query.valueColumn,
       legendFormat: query.legendFormat,
       timeFormat: query.timeFormat,
+      maxRows: query.maxRows,
       cacheDuration: query.cacheDuration,
     };
   }
@@ -80,6 +83,12 @@ export class QueryEditor extends PureComponent<Props, State> {
     this.setState({ timeFormat });
   };
 
+  onMaxRowsChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
+    const maxRows = e.currentTarget.value;
+    this.query.maxRows = maxRows;
+    this.setState({ maxRows });
+  };
+
   onCacheDurationChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
     const cacheDuration = e.currentTarget.value;
     this.query.cacheDuration = cacheDuration;
@@ -100,6 +109,7 @@ export class QueryEditor extends PureComponent<Props, State> {
       valueColumn,
       legendFormat,
       timeFormat,
+      maxRows,
       cacheDuration,
     } = this.state;
     return (
@@ -175,6 +185,18 @@ export class QueryEditor extends PureComponent<Props, State> {
               placeholder=""
               value={timeFormat}
               onChange={this.onTimeFormatChange}
+              onBlur={this.onRunQuery}
+            />
+          </div>
+
+          <div className="gf-form">
+            <InlineFormLabel width={8}>Max Rows</InlineFormLabel>
+            <input
+              type="text"
+              className="gf-form-input"
+              placeholder="-1"
+              value={maxRows}
+              onChange={this.onMaxRowsChange}
               onBlur={this.onRunQuery}
             />
           </div>
