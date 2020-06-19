@@ -14,6 +14,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
     // TODO: pass scopedVars to templateSrv.replace()
     const templateSrv = getTemplateSrv();
     query.region = templateSrv.replace(query.region) || this.defaultRegion;
+    query.maxRows = query.maxRows || '1000';
     query.queryExecutionId = templateSrv.replace(query.queryExecutionId);
     query.inputs = query.queryExecutionId.split(/,/).map(id => {
       return {
