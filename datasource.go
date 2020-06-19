@@ -71,6 +71,7 @@ func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
 	mux.HandleFunc("/named_query_names", ds.handleResourceNamedQueryNames)
 	mux.HandleFunc("/named_query_queries", ds.handleResourceNamedQueryQueries)
 	mux.HandleFunc("/query_execution_ids", ds.handleResourceQueryExecutionIds)
+	mux.HandleFunc("/query_execution_ids_by_name", ds.handleResourceQueryExecutionIdsByName)
 
 	return ds
 }
@@ -587,6 +588,137 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseW
 		data = append(data, *q.QueryExecutionId)
 	}
 	writeResult(rw, "query_execution_ids", data, err)
+}
+
+func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIdsByName(rw http.ResponseWriter, req *http.Request) {
+	backend.Logger.Info("handleResourceQueryExecutionIdsByName Received resource call", "url", req.URL.String(), "method", req.Method)
+	if req.Method != http.MethodGet {
+		return
+	}
+
+	ctx := req.Context()
+	pluginContext := httpadapter.PluginConfigFromContext(ctx)
+	urlQuery := req.URL.Query()
+	region := urlQuery.Get("region")
+	pattern := urlQuery.Get("pattern")
+	limit, err := strconv.ParseInt(urlQuery.Get("limit"), 10, 64)
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+	workGroup := urlQuery.Get("workGroup")
+
+	// to, err := time.Parse(time.RFC3339, urlQuery.Get("to"))
+	// if err != nil {
+	// 	writeResult(rw, "?", nil, err)
+	// 	return
+	// }
+
+	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+
+	data := make([]string, 0)
+	var workGroupParam *string
+	workGroupParam = nil
+	if workGroup != "" {
+		workGroupParam = &workGroup
+	}
+	r := regexp.MustCompile(pattern)
+
+	li := &athena.ListNamedQueriesInput{
+		WorkGroup: workGroupParam,
+	}
+	lo := &athena.ListNamedQueriesOutput{}
+	sql := ""
+	err = svc.ListNamedQueriesPages(li,
+		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
+			lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
+			return !lastPage
+		})
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+
+	//logger.Print("ListNamedQueriesPages num: ",len(lo.NamedQueryIds))
+	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
+		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
+		bo, err := svc.BatchGetNamedQuery(bi)
+		if err != nil {
+			writeResult(rw, "?", nil, err)
+			return
+		}
+		for _, q := range bo.NamedQueries {
+			if r.MatchString(*q.Name) {
+				sql = *q.QueryString
+				sql = strings.TrimSpace(sql)
+				//logger.Print("Found query name, SQL: ",sql)
+				break
+			}
+		}
+	}
+	//if we did not find the named query based on the string, we return nil
+	if sql == "" {
+		//if err != nil {
+		writeResult(rw, "?", nil, errors.New("No query with that name found"))
+		return
+	}
+
+	//==== we ignore time from-to for the queries ====
+	//toRaw, err := strconv.ParseInt(timeRange.ToRaw, 10, 64)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
+
+	eli := &athena.ListQueryExecutionsInput{
+		WorkGroup: workGroupParam,
+	}
+
+	efbo := make([]*athena.QueryExecution, 0)
+	err = svc.ListQueryExecutionsPages(eli,
+		func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
+
+			//==== Instead of collecting all IDs first, we check each page result if we find the SQl query
+			//elo.QueryExecutionIds = append(elo.QueryExecutionIds, page.QueryExecutionIds...)
+			//logger.Print("ListQueryExecutionsPages pagesize: ",len(page.QueryExecutionIds))
+
+			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: page.QueryExecutionIds}
+			bo, err := svc.BatchGetQueryExecution(bi)
+			if err != nil {
+				return false
+			}
+			for _, q := range bo.QueryExecutions {
+				if *q.Status.State != "SUCCEEDED" {
+					continue
+				}
+
+				qq := strings.TrimSpace(*q.Query)
+				if sql == qq {
+					efbo = append(efbo, q)
+					//lets break with the first matching query
+					//logger.Print("Found SQL, QueryExecutionID: ", q.QueryExecutionId, " date completed: ", q.Status.CompletionDateTime)
+					return false
+				}
+			}
+			return !lastPage
+		})
+	// if we did not find a query, we return
+	if (len(efbo)) == 0 {
+		writeResult(rw, "?", nil, errors.New("No query executions for that SQL found"))
+		return
+	}
+
+	limit = int64(math.Min(float64(limit), float64(len(efbo))))
+	for _, q := range efbo[0:limit] {
+		data = append(data, *q.QueryExecutionId)
+	}
+
+	writeResult(rw, "query_execution_ids_by_name", data, err)
 }
 
 type Duration time.Duration

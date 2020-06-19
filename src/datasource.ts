@@ -48,6 +48,22 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
     });
   }
 
+  async getQueryExecutionIdsByName(
+    region: string,
+    limit: number,
+    pattern: string,
+    workGroup: string,
+    to: string
+  ): Promise<string[]> {
+    return this.getResource('query_execution_ids_by_name', {
+      region: region,
+      limit: limit,
+      pattern: pattern,
+      workGroup: workGroup,
+      to: to,
+    });
+  }
+
   async metricFindQuery?(query: any, options?: any): Promise<MetricFindValue[]> {
     const templateSrv = getTemplateSrv();
 
@@ -87,6 +103,29 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
 
       const queryExecutionIds = await this.getQueryExecutionIds(region, limit, pattern, workGroup, to);
       return queryExecutionIds['query_execution_ids'].map(n => {
+        return { text: n, value: n };
+      });
+    }
+
+    const queryExecutionIdsByNameQuery = query.match(
+      /^query_execution_ids_by_name\(([^,]+?),\s?([^,]+?),\s?([^,]+)(,\s?.+)?\)/
+    );
+    if (queryExecutionIdsByNameQuery) {
+      const region = templateSrv.replace(queryExecutionIdsByNameQuery[1]);
+      const limit = parseInt(templateSrv.replace(queryExecutionIdsByNameQuery[2]), 10);
+      const pattern = templateSrv.replace(queryExecutionIdsByNameQuery[3], {}, 'regex');
+      let workGroup = queryExecutionIdsByNameQuery[4];
+      if (workGroup) {
+        workGroup = workGroup.substr(1); //remove the comma
+        workGroup = workGroup.trim();
+      } else {
+        workGroup = null;
+      }
+      workGroup = templateSrv.replace(workGroup);
+      const to = new Date().toISOString(); // TODO
+
+      const queryExecutionIdsByName = await this.getQueryExecutionIdsByName(region, limit, pattern, workGroup, to);
+      return queryExecutionIdsByName['query_execution_ids_by_name'].map(n => {
         return { text: n, value: n };
       });
     }
