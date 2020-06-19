@@ -91,7 +91,7 @@ func (ds *AwsAthenaDatasource) CheckHealth(ctx context.Context, req *backend.Che
 		return res, nil
 	}
 
-	_, err = svc.ListNamedQueries(&athena.ListNamedQueriesInput{})
+	_, err = svc.ListNamedQueriesWithContext(ctx, &athena.ListNamedQueriesInput{})
 	if err != nil {
 		res.Status = backend.HealthStatusError
 		res.Message = "Unable to call Athena API"
@@ -131,7 +131,7 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 			for _, input := range target.Inputs {
 				bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
 			}
-			bo, err := svc.BatchGetQueryExecution(bi)
+			bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
 			if err != nil {
 				return nil, err
 			}
@@ -438,7 +438,7 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryNames(rw http.ResponseWri
 	data := make([]string, 0)
 	li := &athena.ListNamedQueriesInput{}
 	lo := &athena.ListNamedQueriesOutput{}
-	if err := svc.ListNamedQueriesPages(li,
+	if err := svc.ListNamedQueriesPagesWithContext(ctx, li,
 		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
 			lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
 			return !lastPage
@@ -449,7 +449,7 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryNames(rw http.ResponseWri
 	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
 		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
 		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
-		bo, err := svc.BatchGetNamedQuery(bi)
+		bo, err := svc.BatchGetNamedQueryWithContext(ctx, bi)
 		if err != nil {
 			writeResult(rw, "?", nil, err)
 			return
@@ -483,7 +483,7 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryQueries(rw http.ResponseW
 	r := regexp.MustCompile(pattern)
 	li := &athena.ListNamedQueriesInput{}
 	lo := &athena.ListNamedQueriesOutput{}
-	err = svc.ListNamedQueriesPages(li,
+	err = svc.ListNamedQueriesPagesWithContext(ctx, li,
 		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
 			lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
 			return !lastPage
@@ -495,7 +495,7 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryQueries(rw http.ResponseW
 	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
 		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
 		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
-		bo, err := svc.BatchGetNamedQuery(bi)
+		bo, err := svc.BatchGetNamedQueryWithContext(ctx, bi)
 		if err != nil {
 			writeResult(rw, "?", nil, err)
 			return
@@ -562,7 +562,7 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseW
 	for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
 		e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
 		bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
-		bo, err := svc.BatchGetQueryExecution(bi)
+		bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
 		if err != nil {
 			writeResult(rw, "?", nil, err)
 			return
