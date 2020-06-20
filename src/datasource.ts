@@ -1,4 +1,4 @@
-import { DataSourceInstanceSettings, MetricFindValue } from '@grafana/data';
+import { DataSourceInstanceSettings, MetricFindValue, SelectableValue } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
 import { AwsAthenaQuery, AwsAthenaOptions } from './types';
 
@@ -24,48 +24,71 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
     return query;
   }
 
+  async getWorkgroupNameOptions(region: string): Promise<Array<SelectableValue<string>>> {
+    const workgroupNames = await this.getWorkgroupNames(region);
+    return workgroupNames.map(name => ({ label: name, value: name } as SelectableValue<string>));
+  }
+
   async getWorkgroupNames(region: string): Promise<string[]> {
-    return this.getResource('workgroup_names', { region: region });
+    return (await this.getResource('workgroup_names', { region: region }))['workgroup_names'];
   }
 
   async getNamedQueryNames(region: string, workGroup: string): Promise<string[]> {
-    return this.getResource('named_query_names', { region: region, workGroup: workGroup });
+    return (await this.getResource('named_query_names', { region: region, workGroup: workGroup }))['named_query_names'];
   }
 
   async getNamedQueryQueries(region: string, pattern: string, workGroup: string): Promise<string[]> {
-    return this.getResource('named_query_queries', { region: region, pattern: pattern, workGroup: workGroup });
+    return (await this.getResource('named_query_queries', { region: region, pattern: pattern, workGroup: workGroup }))[
+      'named_query_queries'
+    ];
   }
 
-  async getQueryExecutionIds(
+  async getQueryExecutionIdOptions(region: string, workgroup: string): Promise<Array<SelectableValue<string>>> {
+    const to = new Date().toISOString(); // TODO
+    const queryExecutions = await this.getQueryExecutions(region, -1, '.*', workgroup, to);
+    return queryExecutions.map(e => {
+      const id = e.QueryExecutionId;
+      const query = e.Query;
+      const completionDateTime = e.Status.CompletionDateTime;
+      const label = `${completionDateTime} ${id} ${query}`;
+      return { label: label, value: id } as SelectableValue<string>;
+    });
+  }
+
+  async getQueryExecutions(
     region: string,
     limit: number,
     pattern: string,
     workGroup: string,
     to: string
-  ): Promise<string[]> {
-    return this.getResource('query_execution_ids', {
-      region: region,
-      limit: limit,
-      pattern: pattern,
-      workGroup: workGroup,
-      to: to,
-    });
+  ): Promise<any[]> {
+    return (
+      await this.getResource('query_executions', {
+        region: region,
+        limit: limit,
+        pattern: pattern,
+        workGroup: workGroup,
+        to: to,
+      })
+    )['query_executions'];
   }
 
-  async getQueryExecutionIdsByName(
+  async getQueryExecutionsByName(
     region: string,
     limit: number,
     pattern: string,
     workGroup: string,
     to: string
-  ): Promise<string[]> {
-    return this.getResource('query_execution_ids_by_name', {
-      region: region,
-      limit: limit,
-      pattern: pattern,
-      workGroup: workGroup,
-      to: to,
-    });
+  ): Promise<any[]> {
+    return (
+      await this.getResource('query_executions_by_name', {
+        region: region,
+        limit: limit,
+        pattern: pattern,
+        workGroup: workGroup,
+        to: to,
+      })
+    )['query_executions_by_name'];
   }
 
   async metricFindQuery?(query: any, options?: any): Promise<MetricFindValue[]> {
@@ -75,7 +98,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
     if (workgroupNamesQuery) {
       const region = templateSrv.replace(workgroupNamesQuery[1]);
       const workgroupNames = await this.getWorkgroupNames(region);
-      return workgroupNames['workgroup_names'].map(n => {
+      return workgroupNames.map(n => {
         return { text: n, value: n };
       });
     }
@@ -92,7 +115,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
       }
       workGroup = templateSrv.replace(workGroup);
       const namedQueryNames = await this.getNamedQueryNames(region, workGroup);
-      return namedQueryNames['named_query_names'].map(n => {
+      return namedQueryNames.map(n => {
         return { text: n, value: n };
       });
     }
@@ -110,7 +133,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
       }
       workGroup = templateSrv.replace(workGroup);
       const namedQueryQueries = await this.getNamedQueryQueries(region, pattern, workGroup);
-      return namedQueryQueries['named_query_queries'].map(n => {
+      return namedQueryQueries.map(n => {
         return { text: n, value: n };
       });
     }
@@ -130,9 +153,10 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
       workGroup = templateSrv.replace(workGroup);
       const to = new Date().toISOString(); // TODO
 
-      const queryExecutionIds = await this.getQueryExecutionIds(region, limit, pattern, workGroup, to);
-      return queryExecutionIds['query_execution_ids'].map(n => {
-        return { text: n, value: n };
+      const queryExecutions = await this.getQueryExecutions(region, limit, pattern, workGroup, to);
+      return queryExecutions.map(n => {
+        const id = n.QueryExecutionId;
+        return { text: id, value: id };
       });
     }
 
@@ -153,9 +177,10 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
       workGroup = templateSrv.replace(workGroup);
       const to = new Date().toISOString(); // TODO
 
-      const queryExecutionIdsByName = await this.getQueryExecutionIdsByName(region, limit, pattern, workGroup, to);
-      return queryExecutionIdsByName['query_execution_ids_by_name'].map(n => {
-        return { text: n, value: n };
+      const queryExecutionsByName = await this.getQueryExecutionsByName(region, limit, pattern, workGroup, to);
+      return queryExecutionsByName.map(n => {
+        const id = n.QueryExecutionId;
+        return { text: id, value: id };
       });
     }
 

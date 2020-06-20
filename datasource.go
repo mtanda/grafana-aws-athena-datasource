@@ -71,8 +71,8 @@ func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
 	mux.HandleFunc("/workgroup_names", ds.handleResourceWorkgroupNames)
 	mux.HandleFunc("/named_query_names", ds.handleResourceNamedQueryNames)
 	mux.HandleFunc("/named_query_queries", ds.handleResourceNamedQueryQueries)
-	mux.HandleFunc("/query_execution_ids", ds.handleResourceQueryExecutionIds)
-	mux.HandleFunc("/query_execution_ids_by_name", ds.handleResourceQueryExecutionIdsByName)
+	mux.HandleFunc("/query_executions", ds.handleResourceQueryExecutions)
+	mux.HandleFunc("/query_executions_by_name", ds.handleResourceQueryExecutionsByName)
 
 	return ds
 }
@@ -162,9 +162,11 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 		for _, input := range target.Inputs {
 			var resp *athena.GetQueryResultsOutput
 
-			cacheKey := target.Region + "/" + *input.QueryExecutionId + "/" + target.MaxRows
+			cacheKey := "QueryResults/" + strconv.FormatInt(tsdbReq.PluginContext.DataSourceInstanceSettings.ID, 10) + "/" + target.Region + "/" + *input.QueryExecutionId + "/" + target.MaxRows
 			if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
-				resp = item.(*athena.GetQueryResultsOutput)
+				if r, ok := item.(*athena.GetQueryResultsOutput); ok {
+					resp = r
+				}
 			} else {
 				err := svc.GetQueryResultsPagesWithContext(ctx, &input,
 					func(page *athena.GetQueryResultsOutput, lastPage bool) bool {
@@ -571,19 +573,27 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryQueries(rw http.ResponseW
 	writeResult(rw, "named_query_queries", data, err)
 }
 
-func (ds *AwsAthenaDatasource) getQueryExecutionIds(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string, pattern string, to time.Time) ([]string, error) {
+func (ds *AwsAthenaDatasource) getQueryExecutions(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string, pattern string, to time.Time) ([]*athena.QueryExecution, error) {
 	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
 	if err != nil {
 		return nil, err
 	}
 
-	data := make([]string, 0)
 	var workGroupParam *string
 	workGroupParam = nil
 	if workGroup != "" {
 		workGroupParam = &workGroup
 	}
 	r := regexp.MustCompile(pattern)
+
+	var lastQueryExecutionID string
+	lastQueryExecutionIDCacheKey := "LastQueryExecutionId/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + region + "/" + workGroup
+	if item, _, found := ds.cache.GetWithExpiration(lastQueryExecutionIDCacheKey); found {
+		if id, ok := item.(string); ok {
+			lastQueryExecutionID = id
+		}
+	}
+
 	li := &athena.ListQueryExecutionsInput{
 		WorkGroup: workGroupParam,
 	}
@@ -591,41 +601,57 @@ func (ds *AwsAthenaDatasource) getQueryExecutionIds(ctx context.Context, pluginC
 	err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
 		func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
 			lo.QueryExecutionIds = append(lo.QueryExecutionIds, page.QueryExecutionIds...)
+			if *lo.QueryExecutionIds[0] == lastQueryExecutionID {
+				return false // valid cache exists, get query executions from cache
+			}
 			return !lastPage
 		})
 	if err != nil {
 		return nil, err
 	}
-	fbo := make([]*athena.QueryExecution, 0)
-	for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
-		e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
-		bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
-		bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
-		if err != nil {
-			return nil, err
+
+	allQueryExecution := make([]*athena.QueryExecution, 0)
+	QueryExecutionsCacheKey := "QueryExecutions/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + region + "/" + workGroup
+	if *lo.QueryExecutionIds[0] == lastQueryExecutionID {
+		if item, _, found := ds.cache.GetWithExpiration(QueryExecutionsCacheKey); found {
+			if aqe, ok := item.([]*athena.QueryExecution); ok {
+				allQueryExecution = aqe
+			}
 		}
-		for _, q := range bo.QueryExecutions {
-			if *q.Status.State != "SUCCEEDED" {
-				continue
+	} else {
+		for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
+			e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
+			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
+			bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
+			if err != nil {
+				return nil, err
 			}
-			if (*q.Status.CompletionDateTime).After(to) {
-				continue
-			}
-			if r.MatchString(*q.Query) {
-				fbo = append(fbo, q)
-			}
+			allQueryExecution = append(allQueryExecution, bo.QueryExecutions...)
+		}
+
+		ds.cache.Set(lastQueryExecutionIDCacheKey, *lo.QueryExecutionIds[0], time.Duration(24)*time.Hour)
+		ds.cache.Set(QueryExecutionsCacheKey, allQueryExecution, time.Duration(24)*time.Hour)
+	}
+
+	fbo := make([]*athena.QueryExecution, 0)
+	for _, q := range allQueryExecution {
+		if *q.Status.State != "SUCCEEDED" {
+			continue
+		}
+		if (*q.Status.CompletionDateTime).After(to) {
+			continue
+		}
+		if r.MatchString(*q.Query) {
+			fbo = append(fbo, q)
 		}
 	}
 	sort.Slice(fbo, func(i, j int) bool {
 		return fbo[i].Status.CompletionDateTime.After(*fbo[j].Status.CompletionDateTime)
 	})
-	for _, q := range fbo {
-		data = append(data, *q.QueryExecutionId)
-	}
-	return data, nil
+	return fbo, nil
 }
 
-func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseWriter, req *http.Request) {
+func (ds *AwsAthenaDatasource) handleResourceQueryExecutions(rw http.ResponseWriter, req *http.Request) {
 	backend.Logger.Debug("Received resource call", "url", req.URL.String(), "method", req.Method)
 	if req.Method != http.MethodGet {
 		return
@@ -648,20 +674,22 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseW
 		return
 	}
 
-	queryExecutionIds, err := ds.getQueryExecutionIds(ctx, pluginContext, region, workGroup, pattern, to)
+	queryExecutions, err := ds.getQueryExecutions(ctx, pluginContext, region, workGroup, pattern, to)
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
 	}
 
-	limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
-	queryExecutionIds = queryExecutionIds[0:limit]
+	if limit != -1 {
+		limit = int64(math.Min(float64(limit), float64(len(queryExecutions))))
+		queryExecutions = queryExecutions[0:limit]
+	}
 
-	writeResult(rw, "query_execution_ids", queryExecutionIds, err)
+	writeResult(rw, "query_executions", queryExecutions, err)
 }
 
-func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIdsByName(rw http.ResponseWriter, req *http.Request) {
-	backend.Logger.Info("handleResourceQueryExecutionIdsByName Received resource call", "url", req.URL.String(), "method", req.Method)
+func (ds *AwsAthenaDatasource) handleResourceQueryExecutionsByName(rw http.ResponseWriter, req *http.Request) {
+	backend.Logger.Info("handleResourceQueryExecutionsByName Received resource call", "url", req.URL.String(), "method", req.Method)
 	if req.Method != http.MethodGet {
 		return
 	}
@@ -696,16 +724,18 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIdsByName(rw http.Res
 	}
 	sql := namedQueryQueries[0]
 
-	queryExecutionIds, err := ds.getQueryExecutionIds(ctx, pluginContext, region, workGroup, "^"+sql+"$", to)
+	queryExecutions, err := ds.getQueryExecutions(ctx, pluginContext, region, workGroup, "^"+sql+"$", to)
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
 	}
 
-	limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
-	queryExecutionIds = queryExecutionIds[0:limit]
+	if limit != -1 {
+		limit = int64(math.Min(float64(limit), float64(len(queryExecutions))))
+		queryExecutions = queryExecutions[0:limit]
+	}
 
-	writeResult(rw, "query_execution_ids_by_name", queryExecutionIds, err)
+	writeResult(rw, "query_executions_by_name", queryExecutions, err)
 }
 
 type Duration time.Duration

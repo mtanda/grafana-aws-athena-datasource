@@ -1,6 +1,6 @@
 import React, { PureComponent } from 'react';
 import { QueryEditorProps } from '@grafana/data';
-import { InlineFormLabel } from '@grafana/ui';
+import { InlineFormLabel, SegmentAsync } from '@grafana/ui';
 import { DataSource } from '../datasource';
 import { AwsAthenaQuery, AwsAthenaOptions } from '../types';
 
@@ -8,6 +8,7 @@ type Props = QueryEditorProps<DataSource, AwsAthenaQuery, AwsAthenaOptions>;
 
 interface State {
   region: string;
+  workgroup: string;
   queryExecutionId: string;
   timestampColumn: string;
   valueColumn: string;
@@ -25,6 +26,7 @@ export class QueryEditor extends PureComponent<Props, State> {
     const defaultQuery: Partial<AwsAthenaQuery> = {
       format: 'timeserie',
       region: '',
+      workgroup: '',
       queryExecutionId: '',
       timestampColumn: '',
       valueColumn: '',
@@ -37,6 +39,7 @@ export class QueryEditor extends PureComponent<Props, State> {
     this.query = query;
     this.state = {
       region: query.region,
+      workgroup: query.workgroup,
       queryExecutionId: query.queryExecutionId,
       timestampColumn: query.timestampColumn,
       valueColumn: query.valueColumn,
@@ -53,10 +56,24 @@ export class QueryEditor extends PureComponent<Props, State> {
     this.setState({ region });
   };
 
-  onQueryExecutionIdChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
-    const queryExecutionId = e.currentTarget.value;
+  onWorkgroupChange = (item: any) => {
+    let workgroup = 'primary';
+    if (item.value) {
+      workgroup = item.value;
+    }
+    this.query.workgroup = workgroup;
+    this.setState({ workgroup });
+  };
+
+  onQueryExecutionIdChange = (item: any) => {
+    if (!item.value) {
+      return;
+    }
+    const queryExecutionId = item.value;
     this.query.queryExecutionId = queryExecutionId;
     this.setState({ queryExecutionId });
+    const { onRunQuery } = this.props;
+    onRunQuery();
   };
 
   onTimestampColumnChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
@@ -102,8 +119,10 @@ export class QueryEditor extends PureComponent<Props, State> {
   };
 
   render() {
+    const { datasource } = this.props;
     const {
       region,
+      workgroup,
       queryExecutionId,
       timestampColumn,
       valueColumn,
@@ -116,15 +135,25 @@ export class QueryEditor extends PureComponent<Props, State> {
       <>
         <div className="gf-form-inline">
           <div className="gf-form">
+            <InlineFormLabel width={8}>Workgroup</InlineFormLabel>
+            <SegmentAsync
+              loadOptions={() => datasource.getWorkgroupNameOptions(region)}
+              placeholder="Enter Workgroup"
+              value={workgroup}
+              allowCustomValue={true}
+              onChange={this.onWorkgroupChange}
+            ></SegmentAsync>
+          </div>
+
+          <div className="gf-form">
             <InlineFormLabel width={8}>Query Execution Id</InlineFormLabel>
-            <input
-              type="text"
-              className="gf-form-input"
-              placeholder="query execution id"
+            <SegmentAsync
+              loadOptions={() => datasource.getQueryExecutionIdOptions(region, workgroup)}
+              placeholder="Enter Query Execution Id"
               value={queryExecutionId}
+              allowCustomValue={true}
               onChange={this.onQueryExecutionIdChange}
-              onBlur={this.onRunQuery}
-            />
+            ></SegmentAsync>
           </div>
         </div>
 
