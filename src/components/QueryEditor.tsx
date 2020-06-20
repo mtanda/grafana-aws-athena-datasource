@@ -160,45 +160,6 @@ export class QueryEditor extends PureComponent<Props, State> {
       <>
         <div className="gf-form-inline">
           <div className="gf-form">
-            <InlineFormLabel width={8}>Workgroup</InlineFormLabel>
-            <SegmentAsync
-              loadOptions={() => datasource.getWorkgroupNameOptions(region)}
-              placeholder="Enter Workgroup"
-              value={workgroup}
-              allowCustomValue={true}
-              onChange={this.onWorkgroupChange}
-            ></SegmentAsync>
-          </div>
-
-          <div className="gf-form">
-            <InlineFormLabel width={8}>Query Execution Id</InlineFormLabel>
-            <SegmentAsync
-              loadOptions={() => datasource.getQueryExecutionIdOptions(region, workgroup)}
-              placeholder="Enter Query Execution Id"
-              value={queryExecutionId}
-              allowCustomValue={true}
-              onChange={this.onQueryExecutionIdChange}
-            ></SegmentAsync>
-          </div>
-        </div>
-
-        {datasource.outputLocation !== '' && (
-          <div className="gf-form-inline">
-            <div className="gf-form">
-              <QueryField
-                query={queryString}
-                onBlur={this.props.onBlur}
-                onChange={this.onQueryStringChange}
-                onRunQuery={this.props.onRunQuery}
-                placeholder="Enter a AWS Athena Query (run with Shift+Enter)"
-                portalOrigin="aws-athena"
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="gf-form-inline">
-          <div className="gf-form">
             <InlineFormLabel width={8}>Region</InlineFormLabel>
             <input
               type="text"
@@ -210,6 +171,83 @@ export class QueryEditor extends PureComponent<Props, State> {
             />
           </div>
 
+          <div className="gf-form">
+            <InlineFormLabel width={8}>Workgroup</InlineFormLabel>
+            <SegmentAsync
+              loadOptions={() => datasource.getWorkgroupNameOptions(region)}
+              placeholder="Enter Workgroup"
+              value={workgroup}
+              allowCustomValue={true}
+              onChange={this.onWorkgroupChange}
+            ></SegmentAsync>
+          </div>
+        </div>
+
+        <div className="gf-form-inline">
+          <div className="gf-form">
+            <InlineFormLabel width={8}>Query Execution Id</InlineFormLabel>
+            <SegmentAsync
+              loadOptions={() => datasource.getQueryExecutionIdOptions(region, workgroup)}
+              placeholder="Enter Query Execution Id"
+              value={queryExecutionId}
+              allowCustomValue={true}
+              onChange={this.onQueryExecutionIdChange}
+            ></SegmentAsync>
+          </div>
+
+          {datasource.outputLocation !== '' && (
+            <div className="gf-form">
+              <QueryField
+                query={queryString}
+                onBlur={this.props.onBlur}
+                onChange={this.onQueryStringChange}
+                onRunQuery={this.props.onRunQuery}
+                placeholder="Enter a AWS Athena Query (run with Shift+Enter)"
+                portalOrigin="aws-athena"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="gf-form-inline">
+          <div className="gf-form">
+            <InlineFormLabel width={8}>Legend Format</InlineFormLabel>
+            <input
+              type="text"
+              className="gf-form-input"
+              placeholder=""
+              value={legendFormat}
+              onChange={this.onLegendFormatChange}
+              onBlur={this.onRunQuery}
+            />
+          </div>
+
+          <div className="gf-form">
+            <InlineFormLabel width={8}>Max Rows</InlineFormLabel>
+            <input
+              type="text"
+              className="gf-form-input"
+              placeholder="-1"
+              value={maxRows}
+              onChange={this.onMaxRowsChange}
+              onBlur={this.onRunQuery}
+            />
+          </div>
+
+          <div className="gf-form">
+            <InlineFormLabel width={8}>Cache Duration</InlineFormLabel>
+            <input
+              type="text"
+              className="gf-form-input"
+              placeholder="0s"
+              value={cacheDuration}
+              onChange={this.onCacheDurationChange}
+              onBlur={this.onRunQuery}
+            />
+          </div>
+        </div>
+
+        <div className="gf-form-inline">
           <div className="gf-form">
             <InlineFormLabel width={8}>Timestamp Column</InlineFormLabel>
             <input
@@ -235,18 +273,6 @@ export class QueryEditor extends PureComponent<Props, State> {
           </div>
 
           <div className="gf-form">
-            <InlineFormLabel width={8}>Legend Format</InlineFormLabel>
-            <input
-              type="text"
-              className="gf-form-input"
-              placeholder=""
-              value={legendFormat}
-              onChange={this.onLegendFormatChange}
-              onBlur={this.onRunQuery}
-            />
-          </div>
-
-          <div className="gf-form">
             <InlineFormLabel width={8}>Time Format</InlineFormLabel>
             <input
               type="text"
@@ -254,30 +280,6 @@ export class QueryEditor extends PureComponent<Props, State> {
               placeholder=""
               value={timeFormat}
               onChange={this.onTimeFormatChange}
-              onBlur={this.onRunQuery}
-            />
-          </div>
-
-          <div className="gf-form">
-            <InlineFormLabel width={8}>Max Rows</InlineFormLabel>
-            <input
-              type="text"
-              className="gf-form-input"
-              placeholder="-1"
-              value={maxRows}
-              onChange={this.onMaxRowsChange}
-              onBlur={this.onRunQuery}
-            />
-          </div>
-
-          <div className="gf-form">
-            <InlineFormLabel width={8}>Cache Duration</InlineFormLabel>
-            <input
-              type="text"
-              className="gf-form-input"
-              placeholder="0s"
-              value={cacheDuration}
-              onChange={this.onCacheDurationChange}
               onBlur={this.onRunQuery}
             />
           </div>
