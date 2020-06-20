@@ -1,6 +1,6 @@
 import React, { PureComponent } from 'react';
 import { QueryEditorProps } from '@grafana/data';
-import { InlineFormLabel, SegmentAsync } from '@grafana/ui';
+import { InlineFormLabel, SegmentAsync, QueryField } from '@grafana/ui';
 import { DataSource } from '../datasource';
 import { AwsAthenaQuery, AwsAthenaOptions } from '../types';
 
@@ -16,6 +16,7 @@ interface State {
   timeFormat: string;
   maxRows: string;
   cacheDuration: string;
+  queryString: string;
 }
 
 export class QueryEditor extends PureComponent<Props, State> {
@@ -34,6 +35,7 @@ export class QueryEditor extends PureComponent<Props, State> {
       timeFormat: '',
       maxRows: '1000',
       cacheDuration: '',
+      queryString: '',
     };
     const query = Object.assign({}, defaultQuery, props.query);
     this.query = query;
@@ -47,6 +49,7 @@ export class QueryEditor extends PureComponent<Props, State> {
       timeFormat: query.timeFormat,
       maxRows: query.maxRows,
       cacheDuration: query.cacheDuration,
+      queryString: query.queryString,
     };
   }
 
@@ -63,6 +66,13 @@ export class QueryEditor extends PureComponent<Props, State> {
     }
     this.query.workgroup = workgroup;
     this.setState({ workgroup });
+    const { query, onChange, onRunQuery } = this.props;
+    if (onChange) {
+      onChange({ ...query, workgroup: workgroup });
+      if (onRunQuery && query.queryString !== '') {
+        onRunQuery();
+      }
+    }
   };
 
   onQueryExecutionIdChange = (item: any) => {
@@ -112,6 +122,20 @@ export class QueryEditor extends PureComponent<Props, State> {
     this.setState({ cacheDuration });
   };
 
+  onQueryStringChange = (value: string, override?: boolean) => {
+    const queryString = value;
+    this.query.queryString = queryString;
+    this.setState({ queryString });
+
+    const { query, onChange, onRunQuery } = this.props;
+    if (onChange) {
+      onChange({ ...query, queryString: queryString });
+      if (override && onRunQuery) {
+        onRunQuery();
+      }
+    }
+  };
+
   onRunQuery = () => {
     const { query } = this;
     this.props.onChange(query);
@@ -130,6 +154,7 @@ export class QueryEditor extends PureComponent<Props, State> {
       timeFormat,
       maxRows,
       cacheDuration,
+      queryString,
     } = this.state;
     return (
       <>
@@ -156,6 +181,21 @@ export class QueryEditor extends PureComponent<Props, State> {
             ></SegmentAsync>
           </div>
         </div>
+
+        {datasource.outputLocation !== '' && (
+          <div className="gf-form-inline">
+            <div className="gf-form">
+              <QueryField
+                query={queryString}
+                onBlur={this.props.onBlur}
+                onChange={this.onQueryStringChange}
+                onRunQuery={this.props.onRunQuery}
+                placeholder="Enter a AWS Athena Query (run with Shift+Enter)"
+                portalOrigin="aws-athena"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="gf-form-inline">
           <div className="gf-form">

@@ -4,6 +4,7 @@ export interface AwsAthenaOptions extends DataSourceJsonData {
   defaultRegion: string;
   profile: string;
   assumeRoleArn: string;
+  outputLocation: string;
 }
 
 export interface AwsAthenaSecureJsonData {
@@ -30,4 +31,6 @@ export interface AwsAthenaQuery extends DataQuery {
   timeFormat: string;
   maxRows: string;
   cacheDuration: string;
+  queryString: string;
+  outputLocation: string;
 }
