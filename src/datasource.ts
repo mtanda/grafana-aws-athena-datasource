@@ -115,7 +115,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
         workGroup = workGroup.substr(1); //remove the comma
         workGroup = workGroup.trim();
       } else {
-        workGroup = 'primary';
+        workGroup = '';
       }
       workGroup = templateSrv.replace(workGroup);
       const namedQueryNames = await this.getNamedQueryNames(region, workGroup);
@@ -133,7 +133,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
         workGroup = workGroup.substr(1); //remove the comma
         workGroup = workGroup.trim();
       } else {
-        workGroup = 'primary';
+        workGroup = '';
       }
       workGroup = templateSrv.replace(workGroup);
       const namedQueryQueries = await this.getNamedQueryQueries(region, pattern, workGroup);
@@ -152,7 +152,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
         workGroup = workGroup.substr(1); //remove the comma
         workGroup = workGroup.trim();
       } else {
-        workGroup = 'primary';
+        workGroup = '';
       }
       workGroup = templateSrv.replace(workGroup);
       const to = new Date().toISOString(); // TODO
@@ -176,7 +176,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
         workGroup = workGroup.substr(1); //remove the comma
         workGroup = workGroup.trim();
       } else {
-        workGroup = 'primary';
+        workGroup = '';
       }
       workGroup = templateSrv.replace(workGroup);
       const to = new Date().toISOString(); // TODO
