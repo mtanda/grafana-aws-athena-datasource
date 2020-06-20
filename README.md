@@ -16,6 +16,7 @@ Allow following API for EC2 instance, and run Grafana on the EC2 instance.
 - athena:BatchGetQueryExecution
 - athena:ListNamedQueries
 - athena:ListQueryExecutions
+- athena:ListWorkGroups
 
 ### Templating
 
@@ -23,8 +24,9 @@ Allow following API for EC2 instance, and run Grafana on the EC2 instance.
 
 Name | Description
 ---- | --------
-*named_query_names(region)* | Returns a list of named query names.
-*named_query_queries(region, pattern)* | Returns a list of named query expressions which name match `pattern`.
+*workgroup_names(region)* | Returns a list of workgroup names.
+*named_query_names(region, work_group?)* | Returns a list of named query names.
+*named_query_queries(region, pattern, work_group?)* | Returns a list of named query expressions which name match `pattern`.
 *query_execution_ids(region, limit, pattern, work_group?)* | Returns a list of query execution ids which query match `pattern`. If a `work_group` is specified, only execution_ids within that work_group will be returned.
 
 The `query_execution_ids()` result is always sorted by `CompletionDateTime` in descending order.
