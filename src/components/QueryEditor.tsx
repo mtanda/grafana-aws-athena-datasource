@@ -194,9 +194,12 @@ export class QueryEditor extends PureComponent<Props, State> {
               onChange={this.onQueryExecutionIdChange}
             ></SegmentAsync>
           </div>
+        </div>
 
-          {datasource.outputLocation !== '' && (
-            <div className="gf-form">
+        {datasource.outputLocation !== '' && (
+          <div className="gf-form-inline">
+            <div className="gf-form gf-form--grow flex-shrink-1 min-width-15">
+              <InlineFormLabel width={8}>Query String</InlineFormLabel>
               <QueryField
                 query={queryString}
                 onBlur={this.props.onBlur}
@@ -206,8 +209,8 @@ export class QueryEditor extends PureComponent<Props, State> {
                 portalOrigin="aws-athena"
               />
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="gf-form-inline">
           <div className="gf-form">
