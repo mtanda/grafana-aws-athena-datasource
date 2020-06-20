@@ -1,4 +1,4 @@
-import { DataSourceInstanceSettings, MetricFindValue } from '@grafana/data';
+import { DataSourceInstanceSettings, MetricFindValue, SelectableValue } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
 import { AwsAthenaQuery, AwsAthenaOptions } from './types';
 
@@ -22,6 +22,13 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
       };
     });
     return query;
+  }
+
+  async getWorkgroupNameOptions(region: string): Promise<Array<SelectableValue<string>>> {
+    const workgroupNames = await this.getWorkgroupNames(region);
+    return workgroupNames['workgroup_names']
+      ? workgroupNames['workgroup_names'].map(name => ({ label: name, value: name } as SelectableValue<string>))
+      : [];
   }
 
   async getWorkgroupNames(region: string): Promise<string[]> {
