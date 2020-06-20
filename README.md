@@ -1,15 +1,16 @@
 ## AWS Athena Datasource Plugin for Grafana
 
-### Note
-This plugin only support viewing Athena result. Doesn't support post query to Athena.
-
-Grafana doesn't support cache the result now, post query when dashboard is open will cause too much AWS cost.
-So, please post query outside of this plugin.
+### Features:
+ * Graph/Table view
+ * Cache query result by query execution id
+ * Post query to AWS Athena (experimental)
 
 ### Setup
+#### Install Plugin
 Follow [Installing Plugins Manually](https://grafana.com/docs/plugins/installation/) steps, and install plugin from released zip file.
 
-Allow following API for EC2 instance, and run Grafana on the EC2 instance.
+#### IAM Policy
+Allow following API for IAM User/Role.
 
 - athena:GetQueryResults
 - athena:BatchGetNamedQuery
@@ -18,25 +19,58 @@ Allow following API for EC2 instance, and run Grafana on the EC2 instance.
 - athena:ListQueryExecutions
 - athena:ListWorkGroups
 
-### Templating
+If use experimental query posting feature, allow following.
+- athena:StartQueryExecution
+- athena:GetWorkGroup
+
+### Adding the DataSource to Grafana
+See also CloudWatch DataSource Authentication doc to setup datasource.
+https://grafana.com/docs/grafana/latest/features/datasources/cloudwatch/#authentication
+
+| Name                       | Description                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| _Name_                     | The data source name. This is how you refer to the data source in panels and queries.                   |
+| _Default Region_           | Used in query editor to set region (can be changed on per query basis)                                  |
+| _Auth Provider_            | Specify the provider to get credentials.                                                                |
+| _Credentials_ profile name | Specify the name of the profile to use (if you use `~/.aws/credentials` file), leave blank for default. |
+| _Assume Role Arn_          | Specify the ARN of the role to assume                                                                   |
+| _Output Location_          | Specify the S3 Output Location for Athena query result. (experimental feature)                          |
+
+### Query
+#### Query Editor
+
+| Name                       | Description                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| _Work Group_               | Specify the Work Group. (Work as filter for query execution id, or posting target workgroup)            |
+| _Query Execution Id_       | Specify the Query Execution Id to get result.                                                           |
+| _Query String_             | Specify the AWS Athena Query. (experimental)                                                            |
+| _Region_                   | Specify the Region. (overwrite datasource default region)                                               |
+| _Timestamp Column_         | Specify the Timestamp Column for time series.                                                           |
+| _Value Column_             | Specify the Value Column for time series.                                                               |
+| _Legend Format_            | Specify the Legend Format.                                                                              |
+| _Time Format_              | Specify the Time Format of Timestamp column. (default format is RFC3339)                                |
+| _Max Rows_                 | Specify the Max Rows to get result.                                                                     |
+| _Cache Duration_           | Specify the Cache Duration for caching query result.                                                    |
 
 #### Query variable
 
-Name | Description
----- | --------
-*workgroup_names(region)* | Returns a list of workgroup names.
-*named_query_names(region, work_group?)* | Returns a list of named query names.
-*named_query_queries(region, pattern, work_group?)* | Returns a list of named query expressions which name match `pattern`.
-*query_execution_ids(region, limit, pattern, work_group?)* | Returns a list of query execution ids which query match `pattern`. If a `work_group` is specified, only execution_ids within that work_group will be returned.
+| Name                                                                        | Description                                                                |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| *workgroup_names(region)*                                                   | Returns a list of workgroup names.                                         |
+| *named_query_names(region, work_group?)*                                    | Returns a list of named query names.                                       |
+| *named_query_queries(region, pattern, work_group?)*                         | Returns a list of named query expressions which name match `pattern`.      |
+| *query_execution_ids(region, limit, pattern, work_group?)*                  | Returns a list of query execution ids which query match `pattern`.         |
+| *query_execution_ids_by_name(region, limit, named query name, work_group?)* | Returns a list of query execution ids which query match named query query. |
 
-The `query_execution_ids()` result is always sorted by `CompletionDateTime` in descending order.
+If a `work_group` is specified, result is filtered by that work_group.
+The `query_execution_ids()` and `query_execution_ids_by_name()` results are always sorted by `CompletionDateTime` in descending order.
 
-#### Changelog
+### Caution
+This plugin experimentally support posting query.
+To use the feature, set S3 output location in datasource settings.
 
-##### v1.1.0
-- Added support for [athena work groups](https://docs.aws.amazon.com/athena/latest/ug/user-created-workgroups.html) to work around the long api call for execution ids
-- Updated the Makefile to use webpack, as well as package.json to use the latest version of babel
-- Properly handle null values in the results of the query by ignoring them
+And, limit data usage in workgroup settings.
+https://docs.aws.amazon.com/athena/latest/ug/workgroups-setting-control-limits-cloudwatch.html
 
-##### v1.0.0
-- Initial release
+Every time when opening dashboard, Grafana post query without user acknowledgement, so it may cause too much AWS cost.
+Please use carefully posting feature.
