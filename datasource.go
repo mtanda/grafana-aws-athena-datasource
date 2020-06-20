@@ -68,6 +68,7 @@ func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
 	)
 	prometheus.MustRegister(ds.queriesTotal)
 
+	mux.HandleFunc("/workgroup_names", ds.handleResourceWorkgroupNames)
 	mux.HandleFunc("/named_query_names", ds.handleResourceNamedQueryNames)
 	mux.HandleFunc("/named_query_queries", ds.handleResourceNamedQueryQueries)
 	mux.HandleFunc("/query_execution_ids", ds.handleResourceQueryExecutionIds)
@@ -417,6 +418,42 @@ func writeResult(rw http.ResponseWriter, path string, val interface{}, err error
 		code = http.StatusInternalServerError
 	}
 	rw.WriteHeader(code)
+}
+
+func (ds *AwsAthenaDatasource) handleResourceWorkgroupNames(rw http.ResponseWriter, req *http.Request) {
+	backend.Logger.Debug("Received resource call", "url", req.URL.String(), "method", req.Method)
+	if req.Method != http.MethodGet {
+		return
+	}
+
+	ctx := req.Context()
+	pluginContext := httpadapter.PluginConfigFromContext(ctx)
+	urlQuery := req.URL.Query()
+	region := urlQuery.Get("region")
+
+	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+
+	workgroupNames := make([]string, 0)
+	li := &athena.ListWorkGroupsInput{}
+	lo := &athena.ListWorkGroupsOutput{}
+	err = svc.ListWorkGroupsPagesWithContext(ctx, li,
+		func(page *athena.ListWorkGroupsOutput, lastPage bool) bool {
+			lo.WorkGroups = append(lo.WorkGroups, page.WorkGroups...)
+			return !lastPage
+		})
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+	for _, w := range lo.WorkGroups {
+		workgroupNames = append(workgroupNames, *w.Name)
+	}
+
+	writeResult(rw, "workgroup_names", workgroupNames, err)
 }
 
 func (ds *AwsAthenaDatasource) handleResourceNamedQueryNames(rw http.ResponseWriter, req *http.Request) {

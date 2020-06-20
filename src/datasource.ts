@@ -24,6 +24,10 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
     return query;
   }
 
+  async getWorkgroupNames(region: string): Promise<string[]> {
+    return this.getResource('workgroup_names', { region: region });
+  }
+
   async getNamedQueryNames(region: string, workGroup: string): Promise<string[]> {
     return this.getResource('named_query_names', { region: region, workGroup: workGroup });
   }
@@ -66,6 +70,15 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
 
   async metricFindQuery?(query: any, options?: any): Promise<MetricFindValue[]> {
     const templateSrv = getTemplateSrv();
+
+    const workgroupNamesQuery = query.match(/^workgroup_names\(([^\)]+?)\)/);
+    if (workgroupNamesQuery) {
+      const region = templateSrv.replace(workgroupNamesQuery[1]);
+      const workgroupNames = await this.getWorkgroupNames(region);
+      return workgroupNames['workgroup_names'].map(n => {
+        return { text: n, value: n };
+      });
+    }
 
     const namedQueryNamesQuery = query.match(/^named_query_names\(([^\)]+?)(,\s?.+)?\)/);
     if (namedQueryNamesQuery) {
