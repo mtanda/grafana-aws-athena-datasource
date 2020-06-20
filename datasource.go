@@ -164,7 +164,9 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 
 			cacheKey := "QueryResults/" + strconv.FormatInt(tsdbReq.PluginContext.DataSourceInstanceSettings.ID, 10) + "/" + target.Region + "/" + *input.QueryExecutionId + "/" + target.MaxRows
 			if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
-				resp = item.(*athena.GetQueryResultsOutput)
+				if r, ok := item.(*athena.GetQueryResultsOutput); ok {
+					resp = r
+				}
 			} else {
 				err := svc.GetQueryResultsPagesWithContext(ctx, &input,
 					func(page *athena.GetQueryResultsOutput, lastPage bool) bool {
