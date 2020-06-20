@@ -16,6 +16,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/athena"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -82,6 +83,7 @@ func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
 	)
 	prometheus.MustRegister(ds.dataScannedBytesTotal)
 
+	mux.HandleFunc("/regions", ds.handleResourceRegions)
 	mux.HandleFunc("/workgroup_names", ds.handleResourceWorkgroupNames)
 	mux.HandleFunc("/named_query_names", ds.handleResourceNamedQueryNames)
 	mux.HandleFunc("/named_query_queries", ds.handleResourceNamedQueryQueries)
@@ -519,6 +521,62 @@ func writeResult(rw http.ResponseWriter, path string, val interface{}, err error
 		code = http.StatusInternalServerError
 	}
 	rw.WriteHeader(code)
+}
+
+func (ds *AwsAthenaDatasource) handleResourceRegions(rw http.ResponseWriter, req *http.Request) {
+	backend.Logger.Debug("Received resource call", "url", req.URL.String(), "method", req.Method)
+	if req.Method != http.MethodGet {
+		return
+	}
+
+	ctx := req.Context()
+	pluginContext := httpadapter.PluginConfigFromContext(ctx)
+
+	svc, err := ds.getEC2Client(pluginContext.DataSourceInstanceSettings, "us-east-1")
+	if err != nil {
+		writeResult(rw, "?", nil, err)
+		return
+	}
+
+	regions := make([]string, 0)
+	ro, err := svc.DescribeRegions(&ec2.DescribeRegionsInput{})
+	if err != nil {
+		// ignore error
+		regions = []string{
+			"ap-east-1",
+			"ap-northeast-1",
+			"ap-northeast-2",
+			"ap-northeast-3",
+			"ap-south-1",
+			"ap-southeast-1",
+			"ap-southeast-2",
+			"ca-central-1",
+			"cn-north-1",
+			"cn-northwest-1",
+			"eu-central-1",
+			"eu-north-1",
+			"eu-west-1",
+			"eu-west-2",
+			"eu-west-3",
+			"me-south-1",
+			"sa-east-1",
+			"us-east-1",
+			"us-east-2",
+			"us-gov-east-1",
+			"us-gov-west-1",
+			"us-iso-east-1",
+			"us-isob-east-1",
+			"us-west-1",
+			"us-west-2",
+		}
+	}
+
+	for _, r := range ro.Regions {
+		regions = append(regions, *r.RegionName)
+	}
+	sort.Strings(regions)
+
+	writeResult(rw, "regions", regions, err)
 }
 
 func (ds *AwsAthenaDatasource) handleResourceWorkgroupNames(rw http.ResponseWriter, req *http.Request) {

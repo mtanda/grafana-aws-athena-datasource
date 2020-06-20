@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/athena"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -198,5 +199,24 @@ func (t *AwsAthenaDatasource) getClient(datasourceInfo *backend.DataSourceInstan
 	}
 
 	client := athena.New(sess, cfg)
+	return client, nil
+}
+
+func (t *AwsAthenaDatasource) getEC2Client(datasourceInfo *backend.DataSourceInstanceSettings, region string) (*ec2.EC2, error) {
+	dsInfo, err := t.getDsInfo(datasourceInfo, region)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := t.getAwsConfig(dsInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	sess, err := session.NewSession(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	client := ec2.New(sess, cfg)
 	return client, nil
 }

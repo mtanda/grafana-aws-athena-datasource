@@ -53,10 +53,20 @@ export class QueryEditor extends PureComponent<Props, State> {
     };
   }
 
-  onRegionChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
-    const region = e.currentTarget.value;
+  onRegionChange = (item: any) => {
+    const { datasource, query, onChange, onRunQuery } = this.props;
+    let region = datasource.defaultRegion;
+    if (item.value) {
+      region = item.value;
+    }
     this.query.region = region;
     this.setState({ region });
+    if (onChange) {
+      onChange({ ...query, region: region });
+      if (onRunQuery) {
+        onRunQuery();
+      }
+    }
   };
 
   onWorkgroupChange = (item: any) => {
@@ -161,14 +171,13 @@ export class QueryEditor extends PureComponent<Props, State> {
         <div className="gf-form-inline">
           <div className="gf-form">
             <InlineFormLabel width={8}>Region</InlineFormLabel>
-            <input
-              type="text"
-              className="gf-form-input"
-              placeholder="us-east-1"
+            <SegmentAsync
+              loadOptions={() => datasource.getRegionOptions()}
+              placeholder="Enter Region"
               value={region}
+              allowCustomValue={true}
               onChange={this.onRegionChange}
-              onBlur={this.onRunQuery}
-            />
+            ></SegmentAsync>
           </div>
 
           <div className="gf-form">
