@@ -201,6 +201,19 @@ export class ConfigEditor extends PureComponent<Props> {
               />
             </div>
           </div>
+          <div className="gf-form-inline">
+            <div className="gf-form">
+              <InlineFormLabel className="width-14">Output Location</InlineFormLabel>
+              <div className="width-30">
+                <Input
+                  className="width-30"
+                  placeholder="s3://"
+                  value={options.jsonData.outputLocation}
+                  onChange={onUpdateDatasourceJsonDataOption(this.props, 'outputLocation')}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </>
     );

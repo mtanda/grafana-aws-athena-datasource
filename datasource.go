@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/athena"
 	"github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,8 +25,9 @@ import (
 )
 
 type AwsAthenaDatasource struct {
-	cache        *cache.Cache
-	queriesTotal *prometheus.CounterVec
+	cache                 *cache.Cache
+	queriesTotal          *prometheus.CounterVec
+	dataScannedBytesTotal *prometheus.CounterVec
 }
 
 type Target struct {
@@ -38,6 +40,9 @@ type Target struct {
 	TimeFormat      string
 	MaxRows         string
 	CacheDuration   Duration
+	WorkGroup       string
+	QueryString     string
+	OutputLocation  string
 	From            time.Time
 	To              time.Time
 }
@@ -67,6 +72,15 @@ func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
 		[]string{"region"},
 	)
 	prometheus.MustRegister(ds.queriesTotal)
+	ds.dataScannedBytesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "data_scanned_bytes_total",
+			Help:      "scanned data size counter",
+			Namespace: metricNamespace,
+		},
+		[]string{"region"},
+	)
+	prometheus.MustRegister(ds.dataScannedBytesTotal)
 
 	mux.HandleFunc("/workgroup_names", ds.handleResourceWorkgroupNames)
 	mux.HandleFunc("/named_query_names", ds.handleResourceNamedQueryNames)
@@ -127,26 +141,77 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 			return nil, err
 		}
 
-		dedupe := true // TODO: add query option?
-		if dedupe {
-			bi := &athena.BatchGetQueryExecutionInput{}
-			for _, input := range target.Inputs {
-				bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
+		waitQueryExecutionIds := make([]*string, 0)
+		if target.QueryString == "" {
+			dedupe := true // TODO: add query option?
+			if dedupe {
+				bi := &athena.BatchGetQueryExecutionInput{}
+				for _, input := range target.Inputs {
+					bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
+				}
+				bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
+				if err != nil {
+					return nil, err
+				}
+				dupCheck := make(map[string]bool)
+				target.Inputs = make([]athena.GetQueryResultsInput, 0)
+				for _, q := range bo.QueryExecutions {
+					if _, dup := dupCheck[*q.Query]; dup {
+						continue
+					}
+					dupCheck[*q.Query] = true
+					target.Inputs = append(target.Inputs, athena.GetQueryResultsInput{
+						QueryExecutionId: q.QueryExecutionId,
+					})
+				}
 			}
-			bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
+		} else {
+			workgroup, err := ds.getWorkgroup(ctx, tsdbReq.PluginContext, target.Region, target.WorkGroup)
 			if err != nil {
 				return nil, err
 			}
-			dupCheck := make(map[string]bool)
-			target.Inputs = make([]athena.GetQueryResultsInput, 0)
-			for _, q := range bo.QueryExecutions {
-				if _, dup := dupCheck[*q.Query]; dup {
-					continue
+			if workgroup.WorkGroup.Configuration.BytesScannedCutoffPerQuery == nil {
+				return nil, fmt.Errorf("should set scan data limit")
+			}
+			si := &athena.StartQueryExecutionInput{
+				QueryString: aws.String(target.QueryString),
+				WorkGroup:   aws.String(target.WorkGroup),
+				ResultConfiguration: &athena.ResultConfiguration{
+					OutputLocation: aws.String(target.OutputLocation),
+				},
+			}
+			so, err := svc.StartQueryExecutionWithContext(ctx, si)
+			if err != nil {
+				return nil, err
+			}
+			target.Inputs = append(target.Inputs, athena.GetQueryResultsInput{
+				QueryExecutionId: so.QueryExecutionId,
+			})
+			waitQueryExecutionIds = append(waitQueryExecutionIds, so.QueryExecutionId)
+		}
+
+		// wait until query completed
+		if len(waitQueryExecutionIds) > 0 {
+			for i := 0; i < 30; i++ {
+				completeCount := 0
+				bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: waitQueryExecutionIds}
+				bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
+				if err != nil {
+					return nil, err
 				}
-				dupCheck[*q.Query] = true
-				target.Inputs = append(target.Inputs, athena.GetQueryResultsInput{
-					QueryExecutionId: q.QueryExecutionId,
-				})
+				for _, e := range bo.QueryExecutions {
+					if !(*e.Status.State == "QUEUED" || *e.Status.State == "RUNNING") {
+						completeCount++
+					}
+				}
+				if len(waitQueryExecutionIds) == completeCount {
+					for _, e := range bo.QueryExecutions {
+						ds.dataScannedBytesTotal.With(prometheus.Labels{"region": target.Region}).Add(float64(*e.Statistics.DataScannedInBytes))
+					}
+					break
+				} else {
+					time.Sleep(1 * time.Second)
+				}
 			}
 		}
 
@@ -213,6 +278,27 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 	}
 
 	return responses, nil
+}
+
+func (ds *AwsAthenaDatasource) getWorkgroup(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string) (*athena.GetWorkGroupOutput, error) {
+	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	if err != nil {
+		return nil, err
+	}
+
+	WorkgroupCacheKey := "Workgroup/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + region + "/" + workGroup
+	if item, _, found := ds.cache.GetWithExpiration(WorkgroupCacheKey); found {
+		if workgroup, ok := item.(*athena.GetWorkGroupOutput); ok {
+			return workgroup, nil
+		}
+	}
+	workgroup, err := svc.GetWorkGroupWithContext(ctx, &athena.GetWorkGroupInput{WorkGroup: aws.String(workGroup)})
+	if err != nil {
+		return nil, err
+	}
+	ds.cache.Set(WorkgroupCacheKey, workgroup, time.Duration(5)*time.Minute)
+
+	return workgroup, nil
 }
 
 func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.Time, to time.Time, timestampColumn string, valueColumn string, legendFormat string, timeFormat string) ([]*data.Frame, error) {
