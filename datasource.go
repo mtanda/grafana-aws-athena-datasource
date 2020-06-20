@@ -822,6 +822,8 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionsByName(rw http.Respo
 		return
 	}
 	sql := namedQueryQueries[0]
+	sql = strings.TrimRight(sql, " ")
+	sql = strings.TrimRight(sql, ";")
 
 	queryExecutions, err := ds.getQueryExecutions(ctx, pluginContext, region, workGroup, "^"+sql+"$", to)
 	if err != nil {
