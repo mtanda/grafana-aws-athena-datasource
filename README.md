@@ -41,16 +41,16 @@ https://grafana.com/docs/grafana/latest/features/datasources/cloudwatch/#authent
 
 | Name                       | Description                                                                                             |
 | -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| _Region_                   | Specify the Region. (overwrite datasource default region)                                               |
 | _Work Group_               | Specify the Work Group. (Work as filter for query execution id, or posting target workgroup)            |
 | _Query Execution Id_       | Specify the Query Execution Id to get result.                                                           |
 | _Query String_             | Specify the AWS Athena Query. (experimental)                                                            |
-| _Region_                   | Specify the Region. (overwrite datasource default region)                                               |
-| _Timestamp Column_         | Specify the Timestamp Column for time series.                                                           |
-| _Value Column_             | Specify the Value Column for time series.                                                               |
 | _Legend Format_            | Specify the Legend Format.                                                                              |
-| _Time Format_              | Specify the Time Format of Timestamp column. (default format is RFC3339)                                |
 | _Max Rows_                 | Specify the Max Rows to get result.                                                                     |
 | _Cache Duration_           | Specify the Cache Duration for caching query result.                                                    |
+| _Timestamp Column_         | Specify the Timestamp Column for time series.                                                           |
+| _Value Column_             | Specify the Value Column for time series.                                                               |
+| _Time Format_              | Specify the Time Format of Timestamp column. (default format is RFC3339)                                |
 
 #### Query variable
 
