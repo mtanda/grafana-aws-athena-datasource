@@ -583,6 +583,15 @@ func (ds *AwsAthenaDatasource) getQueryExecutions(ctx context.Context, pluginCon
 		workGroupParam = &workGroup
 	}
 	r := regexp.MustCompile(pattern)
+
+	var lastQueryExecutionID string
+	lastQueryExecutionIDCacheKey := "LastQueryExecutionId/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + region + "/" + workGroup
+	if item, _, found := ds.cache.GetWithExpiration(lastQueryExecutionIDCacheKey); found {
+		if id, ok := item.(string); ok {
+			lastQueryExecutionID = id
+		}
+	}
+
 	li := &athena.ListQueryExecutionsInput{
 		WorkGroup: workGroupParam,
 	}
@@ -590,29 +599,48 @@ func (ds *AwsAthenaDatasource) getQueryExecutions(ctx context.Context, pluginCon
 	err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
 		func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
 			lo.QueryExecutionIds = append(lo.QueryExecutionIds, page.QueryExecutionIds...)
+			if *lo.QueryExecutionIds[0] == lastQueryExecutionID {
+				return false // valid cache exists, get query executions from cache
+			}
 			return !lastPage
 		})
 	if err != nil {
 		return nil, err
 	}
-	fbo := make([]*athena.QueryExecution, 0)
-	for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
-		e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
-		bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
-		bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
-		if err != nil {
-			return nil, err
+
+	allQueryExecution := make([]*athena.QueryExecution, 0)
+	QueryExecutionsCacheKey := "QueryExecutions/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + region + "/" + workGroup
+	if *lo.QueryExecutionIds[0] == lastQueryExecutionID {
+		if item, _, found := ds.cache.GetWithExpiration(QueryExecutionsCacheKey); found {
+			if aqe, ok := item.([]*athena.QueryExecution); ok {
+				allQueryExecution = aqe
+			}
 		}
-		for _, q := range bo.QueryExecutions {
-			if *q.Status.State != "SUCCEEDED" {
-				continue
+	} else {
+		for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
+			e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
+			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
+			bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
+			if err != nil {
+				return nil, err
 			}
-			if (*q.Status.CompletionDateTime).After(to) {
-				continue
-			}
-			if r.MatchString(*q.Query) {
-				fbo = append(fbo, q)
-			}
+			allQueryExecution = append(allQueryExecution, bo.QueryExecutions...)
+		}
+
+		ds.cache.Set(lastQueryExecutionIDCacheKey, *lo.QueryExecutionIds[0], time.Duration(24)*time.Hour)
+		ds.cache.Set(QueryExecutionsCacheKey, allQueryExecution, time.Duration(24)*time.Hour)
+	}
+
+	fbo := make([]*athena.QueryExecution, 0)
+	for _, q := range allQueryExecution {
+		if *q.Status.State != "SUCCEEDED" {
+			continue
+		}
+		if (*q.Status.CompletionDateTime).After(to) {
+			continue
+		}
+		if r.MatchString(*q.Query) {
+			fbo = append(fbo, q)
 		}
 	}
 	sort.Slice(fbo, func(i, j int) bool {
