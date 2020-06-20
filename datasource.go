@@ -162,7 +162,7 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 		for _, input := range target.Inputs {
 			var resp *athena.GetQueryResultsOutput
 
-			cacheKey := target.Region + "/" + *input.QueryExecutionId + "/" + target.MaxRows
+			cacheKey := "QueryResults/" + strconv.FormatInt(tsdbReq.PluginContext.DataSourceInstanceSettings.ID, 10) + "/" + target.Region + "/" + *input.QueryExecutionId + "/" + target.MaxRows
 			if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
 				resp = item.(*athena.GetQueryResultsOutput)
 			} else {
