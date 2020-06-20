@@ -45,44 +45,50 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
 
   async getQueryExecutionIdOptions(region: string, workgroup: string): Promise<Array<SelectableValue<string>>> {
     const to = new Date().toISOString(); // TODO
-    const queryExecutionIds = await this.getQueryExecutionIds(region, -1, '.*', workgroup, to);
-    return queryExecutionIds.map(name => ({ label: name, value: name } as SelectableValue<string>));
+    const queryExecutions = await this.getQueryExecutions(region, -1, '.*', workgroup, to);
+    return queryExecutions.map(e => {
+      const id = e.QueryExecutionId;
+      const query = e.Query;
+      const completionDateTime = e.Status.CompletionDateTime;
+      const label = `${completionDateTime} ${id} ${query}`;
+      return { label: label, value: id } as SelectableValue<string>;
+    });
   }
 
-  async getQueryExecutionIds(
+  async getQueryExecutions(
     region: string,
     limit: number,
     pattern: string,
     workGroup: string,
     to: string
-  ): Promise<string[]> {
+  ): Promise<any[]> {
     return (
-      await this.getResource('query_execution_ids', {
+      await this.getResource('query_executions', {
         region: region,
         limit: limit,
         pattern: pattern,
         workGroup: workGroup,
         to: to,
       })
-    )['query_execution_ids'];
+    )['query_executions'];
   }
 
-  async getQueryExecutionIdsByName(
+  async getQueryExecutionsByName(
     region: string,
     limit: number,
     pattern: string,
     workGroup: string,
     to: string
-  ): Promise<string[]> {
+  ): Promise<any[]> {
     return (
-      await this.getResource('query_execution_ids_by_name', {
+      await this.getResource('query_executions_by_name', {
         region: region,
         limit: limit,
         pattern: pattern,
         workGroup: workGroup,
         to: to,
       })
-    )['query_execution_ids_by_name'];
+    )['query_executions_by_name'];
   }
 
   async metricFindQuery?(query: any, options?: any): Promise<MetricFindValue[]> {
@@ -147,9 +153,10 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
       workGroup = templateSrv.replace(workGroup);
       const to = new Date().toISOString(); // TODO
 
-      const queryExecutionIds = await this.getQueryExecutionIds(region, limit, pattern, workGroup, to);
-      return queryExecutionIds.map(n => {
-        return { text: n, value: n };
+      const queryExecutions = await this.getQueryExecutions(region, limit, pattern, workGroup, to);
+      return queryExecutions.map(n => {
+        const id = n.QueryExecutionId;
+        return { text: id, value: id };
       });
     }
 
@@ -170,9 +177,10 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
       workGroup = templateSrv.replace(workGroup);
       const to = new Date().toISOString(); // TODO
 
-      const queryExecutionIdsByName = await this.getQueryExecutionIdsByName(region, limit, pattern, workGroup, to);
-      return queryExecutionIdsByName.map(n => {
-        return { text: n, value: n };
+      const queryExecutionsByName = await this.getQueryExecutionsByName(region, limit, pattern, workGroup, to);
+      return queryExecutionsByName.map(n => {
+        const id = n.QueryExecutionId;
+        return { text: id, value: id };
       });
     }
 

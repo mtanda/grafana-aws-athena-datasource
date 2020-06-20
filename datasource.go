@@ -71,8 +71,8 @@ func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
 	mux.HandleFunc("/workgroup_names", ds.handleResourceWorkgroupNames)
 	mux.HandleFunc("/named_query_names", ds.handleResourceNamedQueryNames)
 	mux.HandleFunc("/named_query_queries", ds.handleResourceNamedQueryQueries)
-	mux.HandleFunc("/query_execution_ids", ds.handleResourceQueryExecutionIds)
-	mux.HandleFunc("/query_execution_ids_by_name", ds.handleResourceQueryExecutionIdsByName)
+	mux.HandleFunc("/query_executions", ds.handleResourceQueryExecutions)
+	mux.HandleFunc("/query_executions_by_name", ds.handleResourceQueryExecutionsByName)
 
 	return ds
 }
@@ -571,13 +571,12 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryQueries(rw http.ResponseW
 	writeResult(rw, "named_query_queries", data, err)
 }
 
-func (ds *AwsAthenaDatasource) getQueryExecutionIds(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string, pattern string, to time.Time) ([]string, error) {
+func (ds *AwsAthenaDatasource) getQueryExecutions(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string, pattern string, to time.Time) ([]*athena.QueryExecution, error) {
 	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
 	if err != nil {
 		return nil, err
 	}
 
-	data := make([]string, 0)
 	var workGroupParam *string
 	workGroupParam = nil
 	if workGroup != "" {
@@ -619,13 +618,10 @@ func (ds *AwsAthenaDatasource) getQueryExecutionIds(ctx context.Context, pluginC
 	sort.Slice(fbo, func(i, j int) bool {
 		return fbo[i].Status.CompletionDateTime.After(*fbo[j].Status.CompletionDateTime)
 	})
-	for _, q := range fbo {
-		data = append(data, *q.QueryExecutionId)
-	}
-	return data, nil
+	return fbo, nil
 }
 
-func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseWriter, req *http.Request) {
+func (ds *AwsAthenaDatasource) handleResourceQueryExecutions(rw http.ResponseWriter, req *http.Request) {
 	backend.Logger.Debug("Received resource call", "url", req.URL.String(), "method", req.Method)
 	if req.Method != http.MethodGet {
 		return
@@ -648,22 +644,22 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseW
 		return
 	}
 
-	queryExecutionIds, err := ds.getQueryExecutionIds(ctx, pluginContext, region, workGroup, pattern, to)
+	queryExecutions, err := ds.getQueryExecutions(ctx, pluginContext, region, workGroup, pattern, to)
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
 	}
 
 	if limit != -1 {
-		limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
-		queryExecutionIds = queryExecutionIds[0:limit]
+		limit = int64(math.Min(float64(limit), float64(len(queryExecutions))))
+		queryExecutions = queryExecutions[0:limit]
 	}
 
-	writeResult(rw, "query_execution_ids", queryExecutionIds, err)
+	writeResult(rw, "query_executions", queryExecutions, err)
 }
 
-func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIdsByName(rw http.ResponseWriter, req *http.Request) {
-	backend.Logger.Info("handleResourceQueryExecutionIdsByName Received resource call", "url", req.URL.String(), "method", req.Method)
+func (ds *AwsAthenaDatasource) handleResourceQueryExecutionsByName(rw http.ResponseWriter, req *http.Request) {
+	backend.Logger.Info("handleResourceQueryExecutionsByName Received resource call", "url", req.URL.String(), "method", req.Method)
 	if req.Method != http.MethodGet {
 		return
 	}
@@ -698,18 +694,18 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIdsByName(rw http.Res
 	}
 	sql := namedQueryQueries[0]
 
-	queryExecutionIds, err := ds.getQueryExecutionIds(ctx, pluginContext, region, workGroup, "^"+sql+"$", to)
+	queryExecutions, err := ds.getQueryExecutions(ctx, pluginContext, region, workGroup, "^"+sql+"$", to)
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
 	}
 
 	if limit != -1 {
-		limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
-		queryExecutionIds = queryExecutionIds[0:limit]
+		limit = int64(math.Min(float64(limit), float64(len(queryExecutions))))
+		queryExecutions = queryExecutions[0:limit]
 	}
 
-	writeResult(rw, "query_execution_ids_by_name", queryExecutionIds, err)
+	writeResult(rw, "query_executions_by_name", queryExecutions, err)
 }
 
 type Duration time.Duration
