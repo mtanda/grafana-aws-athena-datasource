@@ -56,6 +56,7 @@ https://grafana.com/docs/grafana/latest/features/datasources/cloudwatch/#authent
 
 | Name                                                                        | Description                                                                |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| *regions()*                                                                 | Returns a list of regions.                                                 |
 | *workgroup_names(region)*                                                   | Returns a list of workgroup names.                                         |
 | *named_query_names(region, work_group?)*                                    | Returns a list of named query names.                                       |
 | *named_query_queries(region, pattern, work_group?)*                         | Returns a list of named query expressions which name match `pattern`.      |
