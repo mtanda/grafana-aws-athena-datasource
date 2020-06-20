@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/athena"
 	"github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
@@ -462,6 +463,43 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryNames(rw http.ResponseWri
 	writeResult(rw, "named_query_names", data, err)
 }
 
+func (ds *AwsAthenaDatasource) getNamedQueryQueries(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string, pattern string) ([]string, error) {
+	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	if err != nil {
+		return nil, err
+	}
+
+	data := make([]string, 0)
+	r := regexp.MustCompile(pattern)
+	li := &athena.ListNamedQueriesInput{
+		WorkGroup: aws.String(workGroup),
+	}
+	lo := &athena.ListNamedQueriesOutput{}
+	err = svc.ListNamedQueriesPagesWithContext(ctx, li,
+		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
+			lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
+			return !lastPage
+		})
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
+		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
+		bo, err := svc.BatchGetNamedQueryWithContext(ctx, bi)
+		if err != nil {
+			return nil, err
+		}
+		for _, q := range bo.NamedQueries {
+			if r.MatchString(*q.Name) {
+				data = append(data, *q.QueryString)
+			}
+		}
+	}
+
+	return data, nil
+}
+
 func (ds *AwsAthenaDatasource) handleResourceNamedQueryQueries(rw http.ResponseWriter, req *http.Request) {
 	backend.Logger.Debug("Received resource call", "url", req.URL.String(), "method", req.Method)
 	if req.Method != http.MethodGet {
@@ -474,40 +512,67 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryQueries(rw http.ResponseW
 	region := urlQuery.Get("region")
 	pattern := urlQuery.Get("pattern")
 
-	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	data, err := ds.getNamedQueryQueries(ctx, pluginContext, region, "primary", pattern)
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
 	}
 
+	writeResult(rw, "named_query_queries", data, err)
+}
+
+func (ds *AwsAthenaDatasource) getQueryExecutionIds(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string, pattern string, to time.Time) ([]string, error) {
+	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	if err != nil {
+		return nil, err
+	}
+
 	data := make([]string, 0)
+	var workGroupParam *string
+	workGroupParam = nil
+	if workGroup != "" {
+		workGroupParam = &workGroup
+	}
 	r := regexp.MustCompile(pattern)
-	li := &athena.ListNamedQueriesInput{}
-	lo := &athena.ListNamedQueriesOutput{}
-	err = svc.ListNamedQueriesPagesWithContext(ctx, li,
-		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
-			lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
+	li := &athena.ListQueryExecutionsInput{
+		WorkGroup: workGroupParam,
+	}
+	lo := &athena.ListQueryExecutionsOutput{}
+	err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
+		func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
+			lo.QueryExecutionIds = append(lo.QueryExecutionIds, page.QueryExecutionIds...)
 			return !lastPage
 		})
 	if err != nil {
-		writeResult(rw, "?", nil, err)
-		return
+		return nil, err
 	}
-	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
-		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
-		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
-		bo, err := svc.BatchGetNamedQueryWithContext(ctx, bi)
+	fbo := make([]*athena.QueryExecution, 0)
+	for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
+		e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
+		bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
+		bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
 		if err != nil {
-			writeResult(rw, "?", nil, err)
-			return
+			return nil, err
 		}
-		for _, q := range bo.NamedQueries {
-			if r.MatchString(*q.Name) {
-				data = append(data, *q.QueryString)
+		for _, q := range bo.QueryExecutions {
+			if *q.Status.State != "SUCCEEDED" {
+				continue
+			}
+			if (*q.Status.CompletionDateTime).After(to) {
+				continue
+			}
+			if r.MatchString(*q.Query) {
+				fbo = append(fbo, q)
 			}
 		}
 	}
-	writeResult(rw, "named_query_queries", data, err)
+	sort.Slice(fbo, func(i, j int) bool {
+		return fbo[i].Status.CompletionDateTime.After(*fbo[j].Status.CompletionDateTime)
+	})
+	for _, q := range fbo {
+		data = append(data, *q.QueryExecutionId)
+	}
+	return data, nil
 }
 
 func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseWriter, req *http.Request) {
@@ -533,61 +598,16 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseW
 		return
 	}
 
-	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	queryExecutionIds, err := ds.getQueryExecutionIds(ctx, pluginContext, region, workGroup, pattern, to)
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
 	}
 
-	data := make([]string, 0)
-	var workGroupParam *string
-	workGroupParam = nil
-	if workGroup != "" {
-		workGroupParam = &workGroup
-	}
-	r := regexp.MustCompile(pattern)
-	li := &athena.ListQueryExecutionsInput{
-		WorkGroup: workGroupParam,
-	}
-	lo := &athena.ListQueryExecutionsOutput{}
-	err = svc.ListQueryExecutionsPagesWithContext(ctx, li,
-		func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
-			lo.QueryExecutionIds = append(lo.QueryExecutionIds, page.QueryExecutionIds...)
-			return !lastPage
-		})
-	if err != nil {
-		writeResult(rw, "?", nil, err)
-		return
-	}
-	fbo := make([]*athena.QueryExecution, 0)
-	for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
-		e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
-		bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
-		bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
-		if err != nil {
-			writeResult(rw, "?", nil, err)
-			return
-		}
-		for _, q := range bo.QueryExecutions {
-			if *q.Status.State != "SUCCEEDED" {
-				continue
-			}
-			if (*q.Status.CompletionDateTime).After(to) {
-				continue
-			}
-			if r.MatchString(*q.Query) {
-				fbo = append(fbo, q)
-			}
-		}
-	}
-	sort.Slice(fbo, func(i, j int) bool {
-		return fbo[i].Status.CompletionDateTime.After(*fbo[j].Status.CompletionDateTime)
-	})
-	limit = int64(math.Min(float64(limit), float64(len(fbo))))
-	for _, q := range fbo[0:limit] {
-		data = append(data, *q.QueryExecutionId)
-	}
-	writeResult(rw, "query_execution_ids", data, err)
+	limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
+	queryExecutionIds = queryExecutionIds[0:limit]
+
+	writeResult(rw, "query_execution_ids", queryExecutionIds, err)
 }
 
 func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIdsByName(rw http.ResponseWriter, req *http.Request) {
@@ -608,117 +628,34 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIdsByName(rw http.Res
 	}
 	workGroup := urlQuery.Get("workGroup")
 
-	// to, err := time.Parse(time.RFC3339, urlQuery.Get("to"))
-	// if err != nil {
-	// 	writeResult(rw, "?", nil, err)
-	// 	return
-	// }
-
-	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
+	to, err := time.Parse(time.RFC3339, urlQuery.Get("to"))
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
 	}
 
-	data := make([]string, 0)
-	var workGroupParam *string
-	workGroupParam = nil
-	if workGroup != "" {
-		workGroupParam = &workGroup
-	}
-	r := regexp.MustCompile(pattern)
-
-	li := &athena.ListNamedQueriesInput{
-		WorkGroup: workGroupParam,
-	}
-	lo := &athena.ListNamedQueriesOutput{}
-	sql := ""
-	err = svc.ListNamedQueriesPages(li,
-		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
-			lo.NamedQueryIds = append(lo.NamedQueryIds, page.NamedQueryIds...)
-			return !lastPage
-		})
+	namedQueryQueries, err := ds.getNamedQueryQueries(ctx, pluginContext, region, workGroup, pattern)
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
-	}
-
-	//logger.Print("ListNamedQueriesPages num: ",len(lo.NamedQueryIds))
-	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
-		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
-		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
-		bo, err := svc.BatchGetNamedQuery(bi)
-		if err != nil {
-			writeResult(rw, "?", nil, err)
-			return
-		}
-		for _, q := range bo.NamedQueries {
-			if r.MatchString(*q.Name) {
-				sql = *q.QueryString
-				sql = strings.TrimSpace(sql)
-				//logger.Print("Found query name, SQL: ",sql)
-				break
-			}
-		}
 	}
 	//if we did not find the named query based on the string, we return nil
-	if sql == "" {
-		//if err != nil {
+	if len(namedQueryQueries) == 0 {
 		writeResult(rw, "?", nil, errors.New("No query with that name found"))
 		return
 	}
+	sql := namedQueryQueries[0]
 
-	//==== we ignore time from-to for the queries ====
-	//toRaw, err := strconv.ParseInt(timeRange.ToRaw, 10, 64)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//to := time.Unix(toRaw/1000, toRaw%1000*1000*1000)
-
-	eli := &athena.ListQueryExecutionsInput{
-		WorkGroup: workGroupParam,
-	}
-
-	efbo := make([]*athena.QueryExecution, 0)
-	err = svc.ListQueryExecutionsPages(eli,
-		func(page *athena.ListQueryExecutionsOutput, lastPage bool) bool {
-
-			//==== Instead of collecting all IDs first, we check each page result if we find the SQl query
-			//elo.QueryExecutionIds = append(elo.QueryExecutionIds, page.QueryExecutionIds...)
-			//logger.Print("ListQueryExecutionsPages pagesize: ",len(page.QueryExecutionIds))
-
-			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: page.QueryExecutionIds}
-			bo, err := svc.BatchGetQueryExecution(bi)
-			if err != nil {
-				return false
-			}
-			for _, q := range bo.QueryExecutions {
-				if *q.Status.State != "SUCCEEDED" {
-					continue
-				}
-
-				qq := strings.TrimSpace(*q.Query)
-				if sql == qq {
-					efbo = append(efbo, q)
-					//lets break with the first matching query
-					//logger.Print("Found SQL, QueryExecutionID: ", q.QueryExecutionId, " date completed: ", q.Status.CompletionDateTime)
-					return false
-				}
-			}
-			return !lastPage
-		})
-	// if we did not find a query, we return
-	if (len(efbo)) == 0 {
-		writeResult(rw, "?", nil, errors.New("No query executions for that SQL found"))
+	queryExecutionIds, err := ds.getQueryExecutionIds(ctx, pluginContext, region, workGroup, "^"+sql+"$", to)
+	if err != nil {
+		writeResult(rw, "?", nil, err)
 		return
 	}
 
-	limit = int64(math.Min(float64(limit), float64(len(efbo))))
-	for _, q := range efbo[0:limit] {
-		data = append(data, *q.QueryExecutionId)
-	}
+	limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
+	queryExecutionIds = queryExecutionIds[0:limit]
 
-	writeResult(rw, "query_execution_ids_by_name", data, err)
+	writeResult(rw, "query_execution_ids_by_name", queryExecutionIds, err)
 }
 
 type Duration time.Duration
