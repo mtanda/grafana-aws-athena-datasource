@@ -24,12 +24,12 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
     return query;
   }
 
-  async getNamedQueryNames(region: string): Promise<string[]> {
-    return this.getResource('named_query_names', { region: region });
+  async getNamedQueryNames(region: string, workGroup: string): Promise<string[]> {
+    return this.getResource('named_query_names', { region: region, workGroup: workGroup });
   }
 
-  async getNamedQueryQueries(region: string, pattern: string): Promise<string[]> {
-    return this.getResource('named_query_queries', { region: region, pattern: pattern });
+  async getNamedQueryQueries(region: string, pattern: string, workGroup: string): Promise<string[]> {
+    return this.getResource('named_query_queries', { region: region, pattern: pattern, workGroup: workGroup });
   }
 
   async getQueryExecutionIds(
@@ -67,20 +67,36 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
   async metricFindQuery?(query: any, options?: any): Promise<MetricFindValue[]> {
     const templateSrv = getTemplateSrv();
 
-    const namedQueryNamesQuery = query.match(/^named_query_names\(([^\)]+?)\)/);
+    const namedQueryNamesQuery = query.match(/^named_query_names\(([^\)]+?)(,\s?.+)?\)/);
     if (namedQueryNamesQuery) {
       const region = templateSrv.replace(namedQueryNamesQuery[1]);
-      const namedQueryNames = await this.getNamedQueryNames(templateSrv.replace(region));
+      let workGroup = namedQueryNamesQuery[2];
+      if (workGroup) {
+        workGroup = workGroup.substr(1); //remove the comma
+        workGroup = workGroup.trim();
+      } else {
+        workGroup = 'primary';
+      }
+      workGroup = templateSrv.replace(workGroup);
+      const namedQueryNames = await this.getNamedQueryNames(region, workGroup);
       return namedQueryNames['named_query_names'].map(n => {
         return { text: n, value: n };
       });
     }
 
-    const namedQueryQueryQuery = query.match(/^named_query_queries\(([^,]+?),\s?(.+)\)/);
+    const namedQueryQueryQuery = query.match(/^named_query_queries\(([^,]+?),\s?([^,]+)(,\s?.+)?\)/);
     if (namedQueryQueryQuery) {
       const region = templateSrv.replace(namedQueryQueryQuery[1]);
       const pattern = templateSrv.replace(namedQueryQueryQuery[2], {}, 'regex');
-      const namedQueryQueries = await this.getNamedQueryQueries(region, pattern);
+      let workGroup = namedQueryQueryQuery[3];
+      if (workGroup) {
+        workGroup = workGroup.substr(1); //remove the comma
+        workGroup = workGroup.trim();
+      } else {
+        workGroup = 'primary';
+      }
+      workGroup = templateSrv.replace(workGroup);
+      const namedQueryQueries = await this.getNamedQueryQueries(region, pattern, workGroup);
       return namedQueryQueries['named_query_queries'].map(n => {
         return { text: n, value: n };
       });
@@ -96,7 +112,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
         workGroup = workGroup.substr(1); //remove the comma
         workGroup = workGroup.trim();
       } else {
-        workGroup = null;
+        workGroup = 'primary';
       }
       workGroup = templateSrv.replace(workGroup);
       const to = new Date().toISOString(); // TODO
@@ -119,7 +135,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
         workGroup = workGroup.substr(1); //remove the comma
         workGroup = workGroup.trim();
       } else {
-        workGroup = null;
+        workGroup = 'primary';
       }
       workGroup = templateSrv.replace(workGroup);
       const to = new Date().toISOString(); // TODO

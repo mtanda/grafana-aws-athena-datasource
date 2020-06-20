@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/athena"
 	"github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
@@ -430,6 +429,7 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryNames(rw http.ResponseWri
 	pluginContext := httpadapter.PluginConfigFromContext(ctx)
 	urlQuery := req.URL.Query()
 	region := urlQuery.Get("region")
+	workGroup := urlQuery.Get("workGroup")
 
 	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
 	if err != nil {
@@ -438,7 +438,14 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryNames(rw http.ResponseWri
 	}
 
 	data := make([]string, 0)
-	li := &athena.ListNamedQueriesInput{}
+	var workGroupParam *string
+	workGroupParam = nil
+	if workGroup != "" {
+		workGroupParam = &workGroup
+	}
+	li := &athena.ListNamedQueriesInput{
+		WorkGroup: workGroupParam,
+	}
 	lo := &athena.ListNamedQueriesOutput{}
 	if err := svc.ListNamedQueriesPagesWithContext(ctx, li,
 		func(page *athena.ListNamedQueriesOutput, lastPage bool) bool {
@@ -470,9 +477,14 @@ func (ds *AwsAthenaDatasource) getNamedQueryQueries(ctx context.Context, pluginC
 	}
 
 	data := make([]string, 0)
+	var workGroupParam *string
+	workGroupParam = nil
+	if workGroup != "" {
+		workGroupParam = &workGroup
+	}
 	r := regexp.MustCompile(pattern)
 	li := &athena.ListNamedQueriesInput{
-		WorkGroup: aws.String(workGroup),
+		WorkGroup: workGroupParam,
 	}
 	lo := &athena.ListNamedQueriesOutput{}
 	err = svc.ListNamedQueriesPagesWithContext(ctx, li,
@@ -511,8 +523,9 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryQueries(rw http.ResponseW
 	urlQuery := req.URL.Query()
 	region := urlQuery.Get("region")
 	pattern := urlQuery.Get("pattern")
+	workGroup := urlQuery.Get("workGroup")
 
-	data, err := ds.getNamedQueryQueries(ctx, pluginContext, region, "primary", pattern)
+	data, err := ds.getNamedQueryQueries(ctx, pluginContext, region, workGroup, pattern)
 	if err != nil {
 		writeResult(rw, "?", nil, err)
 		return
