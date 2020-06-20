@@ -654,8 +654,10 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIds(rw http.ResponseW
 		return
 	}
 
-	limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
-	queryExecutionIds = queryExecutionIds[0:limit]
+	if limit != -1 {
+		limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
+		queryExecutionIds = queryExecutionIds[0:limit]
+	}
 
 	writeResult(rw, "query_execution_ids", queryExecutionIds, err)
 }
@@ -702,8 +704,10 @@ func (ds *AwsAthenaDatasource) handleResourceQueryExecutionIdsByName(rw http.Res
 		return
 	}
 
-	limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
-	queryExecutionIds = queryExecutionIds[0:limit]
+	if limit != -1 {
+		limit = int64(math.Min(float64(limit), float64(len(queryExecutionIds))))
+		queryExecutionIds = queryExecutionIds[0:limit]
+	}
 
 	writeResult(rw, "query_execution_ids_by_name", queryExecutionIds, err)
 }

@@ -43,6 +43,12 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
     ];
   }
 
+  async getQueryExecutionIdOptions(region: string, workgroup: string): Promise<Array<SelectableValue<string>>> {
+    const to = new Date().toISOString(); // TODO
+    const queryExecutionIds = await this.getQueryExecutionIds(region, -1, '.*', workgroup, to);
+    return queryExecutionIds.map(name => ({ label: name, value: name } as SelectableValue<string>));
+  }
+
   async getQueryExecutionIds(
     region: string,
     limit: number,

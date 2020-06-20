@@ -65,10 +65,15 @@ export class QueryEditor extends PureComponent<Props, State> {
     this.setState({ workgroup });
   };
 
-  onQueryExecutionIdChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
-    const queryExecutionId = e.currentTarget.value;
+  onQueryExecutionIdChange = (item: any) => {
+    if (!item.value) {
+      return;
+    }
+    const queryExecutionId = item.value;
     this.query.queryExecutionId = queryExecutionId;
     this.setState({ queryExecutionId });
+    const { onRunQuery } = this.props;
+    onRunQuery();
   };
 
   onTimestampColumnChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
@@ -142,14 +147,13 @@ export class QueryEditor extends PureComponent<Props, State> {
 
           <div className="gf-form">
             <InlineFormLabel width={8}>Query Execution Id</InlineFormLabel>
-            <input
-              type="text"
-              className="gf-form-input"
-              placeholder="query execution id"
+            <SegmentAsync
+              loadOptions={() => datasource.getQueryExecutionIdOptions(region, workgroup)}
+              placeholder="Enter Query Execution Id"
               value={queryExecutionId}
+              allowCustomValue={true}
               onChange={this.onQueryExecutionIdChange}
-              onBlur={this.onRunQuery}
-            />
+            ></SegmentAsync>
           </div>
         </div>
 
