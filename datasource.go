@@ -376,7 +376,7 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[columnIdx].Name
 			if columnName == timestampColumn {
 				var err error
-				timestamp, err = time.Parse(time.RFC3339, *cell.VarCharValue)
+				timestamp, err = time.Parse(timeFormat, *cell.VarCharValue)
 				if err != nil {
 					return nil, err
 				}
