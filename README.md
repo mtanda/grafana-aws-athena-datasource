@@ -2,7 +2,7 @@
 
 ### Features:
  * Graph/Table view
- * Cache query result by query execution id
+ * Cache query result
  * Post query to AWS Athena (experimental)
 
 ### Setup
@@ -41,13 +41,13 @@ https://grafana.com/docs/grafana/latest/features/datasources/cloudwatch/#authent
 
 | Name                       | Description                                                                                             |
 | -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| _Region_                   | Specify the Region. (overwrite datasource default region)                                               |
+| _Region_                   | Specify the Region. (To use default region, specify "default")                                          |
 | _Work Group_               | Specify the Work Group. (Work as filter for query execution id, or posting target workgroup)            |
-| _Query Execution Id_       | Specify the Query Execution Id to get result.                                                           |
+| _Query Execution Id_       | Specify the comma separated Query Execution Ids to get result. (result format should be same)           |
 | _Query String_             | Specify the AWS Athena Query. (experimental)                                                            |
 | _Legend Format_            | Specify the Legend Format.                                                                              |
-| _Max Rows_                 | Specify the Max Rows to get result.                                                                     |
-| _Cache Duration_           | Specify the Cache Duration for caching query result.                                                    |
+| _Max Rows_                 | Specify the Max Rows to get result. (default is 1000, -1 is unlimited)                                  |
+| _Cache Duration_           | Specify the Cache Duration for caching query result. (cache key is query execution id and max rows)     |
 | _Timestamp Column_         | Specify the Timestamp Column for time series.                                                           |
 | _Value Column_             | Specify the Value Column for time series.                                                               |
 | _Time Format_              | Specify the Time Format of Timestamp column. (default format is RFC3339)                                |
