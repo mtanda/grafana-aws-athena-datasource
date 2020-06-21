@@ -26,14 +26,14 @@ export class QueryEditor extends PureComponent<Props, State> {
     super(props);
     const defaultQuery: Partial<AwsAthenaQuery> = {
       format: 'timeserie',
-      region: '',
+      region: 'default',
       workgroup: '',
       queryExecutionId: '',
       timestampColumn: '',
       valueColumn: '',
       legendFormat: '',
       timeFormat: '',
-      maxRows: '1000',
+      maxRows: '',
       cacheDuration: '',
       queryString: '',
     };
@@ -54,8 +54,8 @@ export class QueryEditor extends PureComponent<Props, State> {
   }
 
   onRegionChange = (item: any) => {
-    const { datasource, query, onChange, onRunQuery } = this.props;
-    let region = datasource.defaultRegion;
+    const { query, onChange, onRunQuery } = this.props;
+    let region = 'default';
     if (item.value) {
       region = item.value;
     }
@@ -70,13 +70,13 @@ export class QueryEditor extends PureComponent<Props, State> {
   };
 
   onWorkgroupChange = (item: any) => {
+    const { query, onChange, onRunQuery } = this.props;
     let workgroup = 'primary';
     if (item.value) {
       workgroup = item.value;
     }
     this.query.workgroup = workgroup;
     this.setState({ workgroup });
-    const { query, onChange, onRunQuery } = this.props;
     if (onChange) {
       onChange({ ...query, workgroup: workgroup });
       if (onRunQuery && query.queryString !== '') {
@@ -86,14 +86,19 @@ export class QueryEditor extends PureComponent<Props, State> {
   };
 
   onQueryExecutionIdChange = (item: any) => {
+    const { query, onChange, onRunQuery } = this.props;
     if (!item.value) {
       return;
     }
     const queryExecutionId = item.value;
     this.query.queryExecutionId = queryExecutionId;
     this.setState({ queryExecutionId });
-    const { onRunQuery } = this.props;
-    onRunQuery();
+    if (onChange) {
+      onChange({ ...query, queryExecutionId: queryExecutionId });
+      if (onRunQuery) {
+        onRunQuery();
+      }
+    }
   };
 
   onTimestampColumnChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
@@ -133,11 +138,10 @@ export class QueryEditor extends PureComponent<Props, State> {
   };
 
   onQueryStringChange = (value: string, override?: boolean) => {
+    const { query, onChange, onRunQuery } = this.props;
     const queryString = value;
     this.query.queryString = queryString;
     this.setState({ queryString });
-
-    const { query, onChange, onRunQuery } = this.props;
     if (onChange) {
       onChange({ ...query, queryString: queryString });
       if (override && onRunQuery) {

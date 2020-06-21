@@ -53,6 +53,12 @@ var (
 	clientCache         = make(map[string]*athena.Athena)
 )
 
+const (
+	DEFAULT_MAX_ROWS          = 1000
+	AWS_API_RESULT_MAX_LENGTH = 50
+	QUERY_WAIT_COUNT          = 30
+)
+
 func init() {
 	legendFormatPattern = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
 }
@@ -166,6 +172,13 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 }
 
 func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContext backend.PluginContext, target Target) (*athena.GetQueryResultsOutput, error) {
+	dsInfo, err := ds.getDsInfo(pluginContext.DataSourceInstanceSettings, target.Region)
+	if err != nil {
+		return nil, err
+	}
+	if target.Region == "default" || target.Region == "" {
+		target.Region = dsInfo.DefaultRegion
+	}
 	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, target.Region)
 	if err != nil {
 		return nil, err
@@ -222,7 +235,7 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 
 	// wait until query completed
 	if len(waitQueryExecutionIds) > 0 {
-		for i := 0; i < 30; i++ {
+		for i := 0; i < QUERY_WAIT_COUNT; i++ {
 			completeCount := 0
 			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: waitQueryExecutionIds}
 			bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
@@ -246,9 +259,12 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 		}
 	}
 
-	maxRows, err := strconv.ParseInt(target.MaxRows, 10, 64)
-	if err != nil {
-		return nil, err
+	maxRows := int64(DEFAULT_MAX_ROWS)
+	if target.MaxRows != "" {
+		maxRows, err = strconv.ParseInt(target.MaxRows, 10, 64)
+		if err != nil {
+			return nil, err
+		}
 	}
 	result := athena.GetQueryResultsOutput{
 		ResultSet: &athena.ResultSet{
@@ -538,11 +554,11 @@ func (ds *AwsAthenaDatasource) handleResourceRegions(rw http.ResponseWriter, req
 		return
 	}
 
-	regions := make([]string, 0)
+	regions := []string{"default"}
 	ro, err := svc.DescribeRegions(&ec2.DescribeRegionsInput{})
 	if err != nil {
 		// ignore error
-		regions = []string{
+		regions = append(regions, []string{
 			"ap-east-1",
 			"ap-northeast-1",
 			"ap-northeast-2",
@@ -568,11 +584,11 @@ func (ds *AwsAthenaDatasource) handleResourceRegions(rw http.ResponseWriter, req
 			"us-isob-east-1",
 			"us-west-1",
 			"us-west-2",
+		}...)
+	} else {
+		for _, r := range ro.Regions {
+			regions = append(regions, *r.RegionName)
 		}
-	}
-
-	for _, r := range ro.Regions {
-		regions = append(regions, *r.RegionName)
 	}
 	sort.Strings(regions)
 
@@ -651,8 +667,8 @@ func (ds *AwsAthenaDatasource) handleResourceNamedQueryNames(rw http.ResponseWri
 		writeResult(rw, "?", nil, err)
 		return
 	}
-	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
-		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+	for i := 0; i < len(lo.NamedQueryIds); i += AWS_API_RESULT_MAX_LENGTH {
+		e := int64(math.Min(float64(i+AWS_API_RESULT_MAX_LENGTH), float64(len(lo.NamedQueryIds))))
 		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
 		bo, err := svc.BatchGetNamedQueryWithContext(ctx, bi)
 		if err != nil {
@@ -691,8 +707,8 @@ func (ds *AwsAthenaDatasource) getNamedQueryQueries(ctx context.Context, pluginC
 	if err != nil {
 		return nil, err
 	}
-	for i := 0; i < len(lo.NamedQueryIds); i += 50 {
-		e := int64(math.Min(float64(i+50), float64(len(lo.NamedQueryIds))))
+	for i := 0; i < len(lo.NamedQueryIds); i += AWS_API_RESULT_MAX_LENGTH {
+		e := int64(math.Min(float64(i+AWS_API_RESULT_MAX_LENGTH), float64(len(lo.NamedQueryIds))))
 		bi := &athena.BatchGetNamedQueryInput{NamedQueryIds: lo.NamedQueryIds[i:e]}
 		bo, err := svc.BatchGetNamedQueryWithContext(ctx, bi)
 		if err != nil {
@@ -776,8 +792,8 @@ func (ds *AwsAthenaDatasource) getQueryExecutions(ctx context.Context, pluginCon
 			}
 		}
 	} else {
-		for i := 0; i < len(lo.QueryExecutionIds); i += 50 {
-			e := int64(math.Min(float64(i+50), float64(len(lo.QueryExecutionIds))))
+		for i := 0; i < len(lo.QueryExecutionIds); i += AWS_API_RESULT_MAX_LENGTH {
+			e := int64(math.Min(float64(i+AWS_API_RESULT_MAX_LENGTH), float64(len(lo.QueryExecutionIds))))
 			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: lo.QueryExecutionIds[i:e]}
 			bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
 			if err != nil {

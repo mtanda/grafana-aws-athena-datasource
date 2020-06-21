@@ -30,8 +30,9 @@ var awsCredentialCache = make(map[string]credentialCache)
 var credentialCacheLock sync.RWMutex
 
 type DatasourceInfo struct {
-	Profile       string `json:"profile"`
 	Region        string
+	DefaultRegion string
+	Profile       string `json:"profile"`
 	AuthType      string `json:"authType"`
 	AssumeRoleArn string `json:"assumeRoleArn"`
 
