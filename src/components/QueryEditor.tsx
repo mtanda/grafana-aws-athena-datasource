@@ -196,18 +196,20 @@ export class QueryEditor extends PureComponent<Props, State> {
           </div>
         </div>
 
-        <div className="gf-form-inline">
-          <div className="gf-form">
-            <InlineFormLabel width={8}>Query Execution Id</InlineFormLabel>
-            <SegmentAsync
-              loadOptions={() => datasource.getQueryExecutionIdOptions(region, workgroup)}
-              placeholder="Enter Query Execution Id"
-              value={queryExecutionId}
-              allowCustomValue={true}
-              onChange={this.onQueryExecutionIdChange}
-            ></SegmentAsync>
+        {queryString === '' && (
+          <div className="gf-form-inline">
+            <div className="gf-form">
+              <InlineFormLabel width={8}>Query Execution Id</InlineFormLabel>
+              <SegmentAsync
+                loadOptions={() => datasource.getQueryExecutionIdOptions(region, workgroup)}
+                placeholder="Enter Query Execution Id"
+                value={queryExecutionId}
+                allowCustomValue={true}
+                onChange={this.onQueryExecutionIdChange}
+              ></SegmentAsync>
+            </div>
           </div>
-        </div>
+        )}
 
         {datasource.outputLocation !== '' && (
           <div className="gf-form-inline">
