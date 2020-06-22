@@ -216,21 +216,35 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 		if workgroup.WorkGroup.Configuration.BytesScannedCutoffPerQuery == nil {
 			return nil, fmt.Errorf("should set scan data limit")
 		}
-		si := &athena.StartQueryExecutionInput{
-			QueryString: aws.String(target.QueryString),
-			WorkGroup:   aws.String(target.WorkGroup),
-			ResultConfiguration: &athena.ResultConfiguration{
-				OutputLocation: aws.String(target.OutputLocation),
-			},
-		}
-		so, err := svc.StartQueryExecutionWithContext(ctx, si)
-		if err != nil {
-			return nil, err
+
+		// cache instant query result by query string
+		var queryExecutionID string
+		cacheKey := "StartQueryExecution/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + target.Region + "/" + target.QueryString + "/" + target.MaxRows
+		if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
+			if id, ok := item.(string); ok {
+				queryExecutionID = id
+			}
+		} else {
+			si := &athena.StartQueryExecutionInput{
+				QueryString: aws.String(target.QueryString),
+				WorkGroup:   aws.String(target.WorkGroup),
+				ResultConfiguration: &athena.ResultConfiguration{
+					OutputLocation: aws.String(target.OutputLocation),
+				},
+			}
+			so, err := svc.StartQueryExecutionWithContext(ctx, si)
+			if err != nil {
+				return nil, err
+			}
+			queryExecutionID = *so.QueryExecutionId
+			if target.CacheDuration > 0 {
+				ds.cache.Set(cacheKey, queryExecutionID, time.Duration(target.CacheDuration)*time.Second)
+			}
+			waitQueryExecutionIds = append(waitQueryExecutionIds, &queryExecutionID)
 		}
 		target.Inputs = append(target.Inputs, athena.GetQueryResultsInput{
-			QueryExecutionId: so.QueryExecutionId,
+			QueryExecutionId: aws.String(queryExecutionID),
 		})
-		waitQueryExecutionIds = append(waitQueryExecutionIds, so.QueryExecutionId)
 	}
 
 	// wait until query completed
