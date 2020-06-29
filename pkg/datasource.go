@@ -31,7 +31,7 @@ type AwsAthenaDatasource struct {
 	dataScannedBytesTotal *prometheus.CounterVec
 }
 
-type Target struct {
+type AwsAthenaQuery struct {
 	RefId           string
 	Region          string
 	Inputs          []athena.GetQueryResultsInput
@@ -132,9 +132,9 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 		Responses: map[string]backend.DataResponse{},
 	}
 
-	targets := make([]Target, 0)
+	targets := make([]AwsAthenaQuery, 0)
 	for _, query := range tsdbReq.Queries {
-		target := Target{}
+		target := AwsAthenaQuery{}
 		if err := json.Unmarshal([]byte(query.JSON), &target); err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 	return responses, nil
 }
 
-func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContext backend.PluginContext, target Target) (*athena.GetQueryResultsOutput, error) {
+func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContext backend.PluginContext, target AwsAthenaQuery) (*athena.GetQueryResultsOutput, error) {
 	dsInfo, err := ds.getDsInfo(pluginContext.DataSourceInstanceSettings, target.Region)
 	if err != nil {
 		return nil, err
