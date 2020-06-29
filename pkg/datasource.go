@@ -26,12 +26,19 @@ import (
 )
 
 type AwsAthenaDatasource struct {
-	cache                 *cache.Cache
+	cache   *cache.Cache
+	metrics *AwsAthenaMetrics
+}
+
+type AwsAthenaMetrics struct {
 	queriesTotal          *prometheus.CounterVec
 	dataScannedBytesTotal *prometheus.CounterVec
 }
 
 type AwsAthenaQuery struct {
+	client          *athena.Athena
+	cache           *cache.Cache
+	metrics         *AwsAthenaMetrics
 	RefId           string
 	Region          string
 	Inputs          []athena.GetQueryResultsInput
@@ -70,24 +77,27 @@ func NewDataSource(mux *http.ServeMux) *AwsAthenaDatasource {
 		cache: cache.New(300*time.Second, 5*time.Second),
 	}
 
-	ds.queriesTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name:      "data_query_total",
-			Help:      "data query counter",
-			Namespace: metricNamespace,
-		},
-		[]string{"region"},
-	)
-	prometheus.MustRegister(ds.queriesTotal)
-	ds.dataScannedBytesTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name:      "data_scanned_bytes_total",
-			Help:      "scanned data size counter",
-			Namespace: metricNamespace,
-		},
-		[]string{"region"},
-	)
-	prometheus.MustRegister(ds.dataScannedBytesTotal)
+	metrics := &AwsAthenaMetrics{
+		queriesTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name:      "data_query_total",
+				Help:      "data query counter",
+				Namespace: metricNamespace,
+			},
+			[]string{"region"},
+		),
+		dataScannedBytesTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name:      "data_scanned_bytes_total",
+				Help:      "scanned data size counter",
+				Namespace: metricNamespace,
+			},
+			[]string{"region"},
+		),
+	}
+	prometheus.MustRegister(metrics.queriesTotal)
+	prometheus.MustRegister(metrics.dataScannedBytesTotal)
+	ds.metrics = metrics
 
 	mux.HandleFunc("/regions", ds.handleResourceRegions)
 	mux.HandleFunc("/workgroup_names", ds.handleResourceWorkgroupNames)
@@ -140,11 +150,27 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 		}
 		target.From = query.TimeRange.From
 		target.To = query.TimeRange.To
+
+		dsInfo, err := ds.getDsInfo(tsdbReq.PluginContext.DataSourceInstanceSettings, target.Region)
+		if err != nil {
+			return nil, err
+		}
+		if target.Region == "default" || target.Region == "" {
+			target.Region = dsInfo.DefaultRegion
+		}
+		svc, err := ds.getClient(tsdbReq.PluginContext.DataSourceInstanceSettings, target.Region)
+		if err != nil {
+			return nil, err
+		}
+		target.client = svc
+		target.cache = ds.cache
+		target.metrics = ds.metrics
+
 		targets = append(targets, target)
 	}
 
 	for _, target := range targets {
-		result, err := ds.getQueryResults(ctx, tsdbReq.PluginContext, target)
+		result, err := target.getQueryResults(ctx, tsdbReq.PluginContext, target)
 		if err != nil {
 			responses.Responses[target.RefId] = backend.DataResponse{
 				Error: err,
@@ -171,18 +197,8 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 	return responses, nil
 }
 
-func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContext backend.PluginContext, target AwsAthenaQuery) (*athena.GetQueryResultsOutput, error) {
-	dsInfo, err := ds.getDsInfo(pluginContext.DataSourceInstanceSettings, target.Region)
-	if err != nil {
-		return nil, err
-	}
-	if target.Region == "default" || target.Region == "" {
-		target.Region = dsInfo.DefaultRegion
-	}
-	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, target.Region)
-	if err != nil {
-		return nil, err
-	}
+func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext backend.PluginContext, target AwsAthenaQuery) (*athena.GetQueryResultsOutput, error) {
+	var err error
 
 	waitQueryExecutionIds := make([]*string, 0)
 	if target.QueryString == "" {
@@ -192,7 +208,7 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 			for _, input := range target.Inputs {
 				bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
 			}
-			bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
+			bo, err := query.client.BatchGetQueryExecutionWithContext(ctx, bi)
 			if err != nil {
 				return nil, err
 			}
@@ -209,7 +225,7 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 			}
 		}
 	} else {
-		workgroup, err := ds.getWorkgroup(ctx, pluginContext, target.Region, target.WorkGroup)
+		workgroup, err := query.getWorkgroup(ctx, pluginContext, target.Region, target.WorkGroup)
 		if err != nil {
 			return nil, err
 		}
@@ -220,7 +236,7 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 		// cache instant query result by query string
 		var queryExecutionID string
 		cacheKey := "StartQueryExecution/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + target.Region + "/" + target.QueryString + "/" + target.MaxRows
-		if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
+		if item, _, found := query.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
 			if id, ok := item.(string); ok {
 				queryExecutionID = id
 			}
@@ -232,13 +248,13 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 					OutputLocation: aws.String(target.OutputLocation),
 				},
 			}
-			so, err := svc.StartQueryExecutionWithContext(ctx, si)
+			so, err := query.client.StartQueryExecutionWithContext(ctx, si)
 			if err != nil {
 				return nil, err
 			}
 			queryExecutionID = *so.QueryExecutionId
 			if target.CacheDuration > 0 {
-				ds.cache.Set(cacheKey, queryExecutionID, time.Duration(target.CacheDuration)*time.Second)
+				query.cache.Set(cacheKey, queryExecutionID, time.Duration(target.CacheDuration)*time.Second)
 			}
 			waitQueryExecutionIds = append(waitQueryExecutionIds, &queryExecutionID)
 		}
@@ -252,7 +268,7 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 		for i := 0; i < QUERY_WAIT_COUNT; i++ {
 			completeCount := 0
 			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: waitQueryExecutionIds}
-			bo, err := svc.BatchGetQueryExecutionWithContext(ctx, bi)
+			bo, err := query.client.BatchGetQueryExecutionWithContext(ctx, bi)
 			if err != nil {
 				return nil, err
 			}
@@ -264,7 +280,7 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 			}
 			if len(waitQueryExecutionIds) == completeCount {
 				for _, e := range bo.QueryExecutions {
-					ds.dataScannedBytesTotal.With(prometheus.Labels{"region": target.Region}).Add(float64(*e.Statistics.DataScannedInBytes))
+					query.metrics.dataScannedBytesTotal.With(prometheus.Labels{"region": target.Region}).Add(float64(*e.Statistics.DataScannedInBytes))
 				}
 				break
 			} else {
@@ -289,14 +305,14 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 		var resp *athena.GetQueryResultsOutput
 
 		cacheKey := "QueryResults/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + target.Region + "/" + *input.QueryExecutionId + "/" + target.MaxRows
-		if item, _, found := ds.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
+		if item, _, found := query.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
 			if r, ok := item.(*athena.GetQueryResultsOutput); ok {
 				resp = r
 			}
 		} else {
-			err := svc.GetQueryResultsPagesWithContext(ctx, &input,
+			err := query.client.GetQueryResultsPagesWithContext(ctx, &input,
 				func(page *athena.GetQueryResultsOutput, lastPage bool) bool {
-					ds.queriesTotal.With(prometheus.Labels{"region": target.Region}).Inc()
+					query.metrics.queriesTotal.With(prometheus.Labels{"region": target.Region}).Inc()
 					if resp == nil {
 						resp = page
 					} else {
@@ -314,7 +330,7 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 			}
 
 			if target.CacheDuration > 0 {
-				ds.cache.Set(cacheKey, resp, time.Duration(target.CacheDuration)*time.Second)
+				query.cache.Set(cacheKey, resp, time.Duration(target.CacheDuration)*time.Second)
 			}
 		}
 
@@ -325,23 +341,18 @@ func (ds *AwsAthenaDatasource) getQueryResults(ctx context.Context, pluginContex
 	return &result, nil
 }
 
-func (ds *AwsAthenaDatasource) getWorkgroup(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string) (*athena.GetWorkGroupOutput, error) {
-	svc, err := ds.getClient(pluginContext.DataSourceInstanceSettings, region)
-	if err != nil {
-		return nil, err
-	}
-
+func (query *AwsAthenaQuery) getWorkgroup(ctx context.Context, pluginContext backend.PluginContext, region string, workGroup string) (*athena.GetWorkGroupOutput, error) {
 	WorkgroupCacheKey := "Workgroup/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + region + "/" + workGroup
-	if item, _, found := ds.cache.GetWithExpiration(WorkgroupCacheKey); found {
+	if item, _, found := query.cache.GetWithExpiration(WorkgroupCacheKey); found {
 		if workgroup, ok := item.(*athena.GetWorkGroupOutput); ok {
 			return workgroup, nil
 		}
 	}
-	workgroup, err := svc.GetWorkGroupWithContext(ctx, &athena.GetWorkGroupInput{WorkGroup: aws.String(workGroup)})
+	workgroup, err := query.client.GetWorkGroupWithContext(ctx, &athena.GetWorkGroupInput{WorkGroup: aws.String(workGroup)})
 	if err != nil {
 		return nil, err
 	}
-	ds.cache.Set(WorkgroupCacheKey, workgroup, time.Duration(5)*time.Minute)
+	query.cache.Set(WorkgroupCacheKey, workgroup, time.Duration(5)*time.Minute)
 
 	return workgroup, nil
 }
