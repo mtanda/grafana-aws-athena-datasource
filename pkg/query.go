@@ -14,29 +14,30 @@ import (
 )
 
 type AwsAthenaQuery struct {
-	client          *athena.Athena
-	cache           *cache.Cache
-	metrics         *AwsAthenaMetrics
-	RefId           string
-	Region          string
-	Inputs          []athena.GetQueryResultsInput
-	TimestampColumn string
-	ValueColumn     string
-	LegendFormat    string
-	TimeFormat      string
-	MaxRows         string
-	CacheDuration   Duration
-	WorkGroup       string
-	QueryString     string
-	OutputLocation  string
-	From            time.Time
-	To              time.Time
+	client                *athena.Athena
+	cache                 *cache.Cache
+	metrics               *AwsAthenaMetrics
+	datasourceID          int64
+	waitQueryExecutionIds []*string
+	RefId                 string
+	Region                string
+	Inputs                []athena.GetQueryResultsInput
+	TimestampColumn       string
+	ValueColumn           string
+	LegendFormat          string
+	TimeFormat            string
+	MaxRows               string
+	CacheDuration         Duration
+	WorkGroup             string
+	QueryString           string
+	OutputLocation        string
+	From                  time.Time
+	To                    time.Time
 }
 
 func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext backend.PluginContext, target AwsAthenaQuery) (*athena.GetQueryResultsOutput, error) {
 	var err error
 
-	waitQueryExecutionIds := make([]*string, 0)
 	if target.QueryString == "" {
 		dedupe := true // TODO: add query option?
 		if dedupe {
@@ -69,59 +70,20 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 			return nil, fmt.Errorf("should set scan data limit")
 		}
 
-		// cache instant query result by query string
-		var queryExecutionID string
-		cacheKey := "StartQueryExecution/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + target.Region + "/" + target.QueryString + "/" + target.MaxRows
-		if item, _, found := query.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
-			if id, ok := item.(string); ok {
-				queryExecutionID = id
-			}
-		} else {
-			si := &athena.StartQueryExecutionInput{
-				QueryString: aws.String(target.QueryString),
-				WorkGroup:   aws.String(target.WorkGroup),
-				ResultConfiguration: &athena.ResultConfiguration{
-					OutputLocation: aws.String(target.OutputLocation),
-				},
-			}
-			so, err := query.client.StartQueryExecutionWithContext(ctx, si)
-			if err != nil {
-				return nil, err
-			}
-			queryExecutionID = *so.QueryExecutionId
-			if target.CacheDuration > 0 {
-				query.cache.Set(cacheKey, queryExecutionID, time.Duration(target.CacheDuration)*time.Second)
-			}
-			waitQueryExecutionIds = append(waitQueryExecutionIds, &queryExecutionID)
+		queryExecutionID, err := query.startQueryExecution(ctx)
+		if err != nil {
+			return nil, err
 		}
+
 		target.Inputs = append(target.Inputs, athena.GetQueryResultsInput{
 			QueryExecutionId: aws.String(queryExecutionID),
 		})
 	}
 
 	// wait until query completed
-	if len(waitQueryExecutionIds) > 0 {
-		for i := 0; i < QUERY_WAIT_COUNT; i++ {
-			completeCount := 0
-			bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: waitQueryExecutionIds}
-			bo, err := query.client.BatchGetQueryExecutionWithContext(ctx, bi)
-			if err != nil {
-				return nil, err
-			}
-			for _, e := range bo.QueryExecutions {
-				// TODO: add warning for FAILED or CANCELLED
-				if !(*e.Status.State == "QUEUED" || *e.Status.State == "RUNNING") {
-					completeCount++
-				}
-			}
-			if len(waitQueryExecutionIds) == completeCount {
-				for _, e := range bo.QueryExecutions {
-					query.metrics.dataScannedBytesTotal.With(prometheus.Labels{"region": target.Region}).Add(float64(*e.Statistics.DataScannedInBytes))
-				}
-				break
-			} else {
-				time.Sleep(1 * time.Second)
-			}
+	if len(query.waitQueryExecutionIds) > 0 {
+		if err := query.waitForQueryCompleted(ctx, query.waitQueryExecutionIds); err != nil {
+			return nil, err
 		}
 	}
 
@@ -191,4 +153,59 @@ func (query *AwsAthenaQuery) getWorkgroup(ctx context.Context, pluginContext bac
 	query.cache.Set(WorkgroupCacheKey, workgroup, time.Duration(5)*time.Minute)
 
 	return workgroup, nil
+}
+
+func (query *AwsAthenaQuery) startQueryExecution(ctx context.Context) (string, error) {
+	// cache instant query result by query string
+	var queryExecutionID string
+	cacheKey := "StartQueryExecution/" + strconv.FormatInt(query.datasourceID, 10) + "/" + query.Region + "/" + query.QueryString + "/" + query.MaxRows
+	if item, _, found := query.cache.GetWithExpiration(cacheKey); found && query.CacheDuration > 0 {
+		if id, ok := item.(string); ok {
+			queryExecutionID = id
+		}
+	} else {
+		si := &athena.StartQueryExecutionInput{
+			QueryString: aws.String(query.QueryString),
+			WorkGroup:   aws.String(query.WorkGroup),
+			ResultConfiguration: &athena.ResultConfiguration{
+				OutputLocation: aws.String(query.OutputLocation),
+			},
+		}
+		so, err := query.client.StartQueryExecutionWithContext(ctx, si)
+		if err != nil {
+			return "", err
+		}
+		queryExecutionID = *so.QueryExecutionId
+		if query.CacheDuration > 0 {
+			query.cache.Set(cacheKey, queryExecutionID, time.Duration(query.CacheDuration)*time.Second)
+		}
+		query.waitQueryExecutionIds = append(query.waitQueryExecutionIds, &queryExecutionID)
+	}
+	return queryExecutionID, nil
+}
+
+func (query *AwsAthenaQuery) waitForQueryCompleted(ctx context.Context, waitQueryExecutionIds []*string) error {
+	for i := 0; i < QUERY_WAIT_COUNT; i++ {
+		completeCount := 0
+		bi := &athena.BatchGetQueryExecutionInput{QueryExecutionIds: waitQueryExecutionIds}
+		bo, err := query.client.BatchGetQueryExecutionWithContext(ctx, bi)
+		if err != nil {
+			return err
+		}
+		for _, e := range bo.QueryExecutions {
+			// TODO: add warning for FAILED or CANCELLED
+			if !(*e.Status.State == "QUEUED" || *e.Status.State == "RUNNING") {
+				completeCount++
+			}
+		}
+		if len(waitQueryExecutionIds) == completeCount {
+			for _, e := range bo.QueryExecutions {
+				query.metrics.dataScannedBytesTotal.With(prometheus.Labels{"region": query.Region}).Add(float64(*e.Statistics.DataScannedInBytes))
+			}
+			break
+		} else {
+			time.Sleep(1 * time.Second)
+		}
+	}
+	return nil
 }

@@ -144,6 +144,7 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 		target.client = svc
 		target.cache = ds.cache
 		target.metrics = ds.metrics
+		target.datasourceID = tsdbReq.PluginContext.DataSourceInstanceSettings.ID
 
 		targets = append(targets, target)
 	}
