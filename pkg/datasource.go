@@ -200,8 +200,18 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 	}
 
 	if timestampIndex != -1 {
+		n := 0
+		for _, row := range resp.ResultSet.Rows {
+			if row.Data[timestampIndex].VarCharValue == nil {
+				continue
+			}
+			resp.ResultSet.Rows[n] = row
+			n++
+		}
+		resp.ResultSet.Rows = resp.ResultSet.Rows[:n]
+
 		sort.Slice(resp.ResultSet.Rows, func(i, j int) bool {
-			return resp.ResultSet.Rows[i].Data[timestampIndex].VarCharValue != nil && resp.ResultSet.Rows[j].Data[timestampIndex].VarCharValue != nil && *resp.ResultSet.Rows[i].Data[timestampIndex].VarCharValue < *resp.ResultSet.Rows[j].Data[timestampIndex].VarCharValue
+			return *resp.ResultSet.Rows[i].Data[timestampIndex].VarCharValue < *resp.ResultSet.Rows[j].Data[timestampIndex].VarCharValue
 		})
 	}
 
@@ -211,28 +221,18 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 	}
 
 	ficm := make(map[string]*data.FrameInputConverter)
-	for rowIdx, row := range resp.ResultSet.Rows {
+	ficRowIdx := make(map[string]int)
+	for _, row := range resp.ResultSet.Rows {
 		kv := make(map[string]string)
-		var timestamp time.Time
 		for columnIdx, cell := range row.Data {
 			if cell == nil || cell.VarCharValue == nil {
 				continue
 			}
 			columnName := *resp.ResultSet.ResultSetMetadata.ColumnInfo[columnIdx].Name
-			if columnName == timestampColumn {
-				var err error
-				timestamp, err = time.Parse(timeFormat, *cell.VarCharValue)
-				if err != nil {
-					return nil, err
-				}
-			}
 			if columnName == timestampColumn || columnName == valueColumn {
 				continue
 			}
 			kv[columnName] = *cell.VarCharValue
-		}
-		if timestampColumn != "" && (timestamp.IsZero() || (timestamp.Before(from) || timestamp.After(to))) {
-			continue // out of range data
 		}
 		name := formatLegend(kv, legendFormat)
 		inputConverter, ok := ficm[name]
@@ -253,19 +253,37 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 				return nil, err
 			}
 			ficm[name] = inputConverter
+			ficRowIdx[name] = 0
 		}
 		for columnIdx, cell := range row.Data {
 			if cell == nil || cell.VarCharValue == nil {
 				continue
 			}
-			if err := inputConverter.Set(columnIdx, rowIdx, *cell.VarCharValue); err != nil {
+			if err := inputConverter.Set(columnIdx, ficRowIdx[name], *cell.VarCharValue); err != nil {
 				return nil, err
 			}
 		}
+		ficRowIdx[name]++
 	}
 
 	frames := make([]*data.Frame, 0)
 	for _, fic := range ficm {
+		if timestampColumn != "" {
+			var err error
+			fic.Frame, err = fic.Frame.FilterRowsByField(timestampIndex, func(i interface{}) (bool, error) {
+				timestamp, ok := i.(time.Time)
+				if !ok {
+					return false, fmt.Errorf("expected time input but got type %T", i)
+				}
+				if timestamp.IsZero() || (timestamp.Before(from) || timestamp.After(to)) {
+					return false, nil
+				}
+				return true, nil
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
 		frames = append(frames, fic.Frame)
 	}
 
@@ -287,7 +305,7 @@ var converterMap = map[string]data.FieldConverter{
 
 func genTimeFieldConverter(timeFormat string) data.FieldConverter {
 	return data.FieldConverter{
-		OutputFieldType: data.FieldTypeNullableTime,
+		OutputFieldType: data.FieldTypeTime,
 		Converter: func(v interface{}) (interface{}, error) {
 			val, ok := v.(string)
 			if !ok {
@@ -296,7 +314,7 @@ func genTimeFieldConverter(timeFormat string) data.FieldConverter {
 			if t, err := time.Parse(timeFormat, val); err != nil {
 				return nil, err
 			} else {
-				return &t, nil
+				return t, nil
 			}
 		},
 	}
