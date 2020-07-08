@@ -35,14 +35,14 @@ type AwsAthenaQuery struct {
 	To                    time.Time
 }
 
-func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext backend.PluginContext, target AwsAthenaQuery) (*athena.GetQueryResultsOutput, error) {
+func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext backend.PluginContext) (*athena.GetQueryResultsOutput, error) {
 	var err error
 
-	if target.QueryString == "" {
+	if query.QueryString == "" {
 		dedupe := true // TODO: add query option?
 		if dedupe {
 			bi := &athena.BatchGetQueryExecutionInput{}
-			for _, input := range target.Inputs {
+			for _, input := range query.Inputs {
 				bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
 			}
 			bo, err := query.client.BatchGetQueryExecutionWithContext(ctx, bi)
@@ -50,19 +50,19 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 				return nil, err
 			}
 			dupCheck := make(map[string]bool)
-			target.Inputs = make([]athena.GetQueryResultsInput, 0)
+			query.Inputs = make([]athena.GetQueryResultsInput, 0)
 			for _, q := range bo.QueryExecutions {
 				if _, dup := dupCheck[*q.Query]; dup {
 					continue
 				}
 				dupCheck[*q.Query] = true
-				target.Inputs = append(target.Inputs, athena.GetQueryResultsInput{
+				query.Inputs = append(query.Inputs, athena.GetQueryResultsInput{
 					QueryExecutionId: q.QueryExecutionId,
 				})
 			}
 		}
 	} else {
-		workgroup, err := query.getWorkgroup(ctx, pluginContext, target.Region, target.WorkGroup)
+		workgroup, err := query.getWorkgroup(ctx, pluginContext, query.Region, query.WorkGroup)
 		if err != nil {
 			return nil, err
 		}
@@ -75,7 +75,7 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 			return nil, err
 		}
 
-		target.Inputs = append(target.Inputs, athena.GetQueryResultsInput{
+		query.Inputs = append(query.Inputs, athena.GetQueryResultsInput{
 			QueryExecutionId: aws.String(queryExecutionID),
 		})
 	}
@@ -88,8 +88,8 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 	}
 
 	maxRows := int64(DEFAULT_MAX_ROWS)
-	if target.MaxRows != "" {
-		maxRows, err = strconv.ParseInt(target.MaxRows, 10, 64)
+	if query.MaxRows != "" {
+		maxRows, err = strconv.ParseInt(query.MaxRows, 10, 64)
 		if err != nil {
 			return nil, err
 		}
@@ -99,18 +99,18 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 			Rows: make([]*athena.Row, 0),
 		},
 	}
-	for _, input := range target.Inputs {
+	for _, input := range query.Inputs {
 		var resp *athena.GetQueryResultsOutput
 
-		cacheKey := "QueryResults/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + target.Region + "/" + *input.QueryExecutionId + "/" + target.MaxRows
-		if item, _, found := query.cache.GetWithExpiration(cacheKey); found && target.CacheDuration > 0 {
+		cacheKey := "QueryResults/" + strconv.FormatInt(pluginContext.DataSourceInstanceSettings.ID, 10) + "/" + query.Region + "/" + *input.QueryExecutionId + "/" + query.MaxRows
+		if item, _, found := query.cache.GetWithExpiration(cacheKey); found && query.CacheDuration > 0 {
 			if r, ok := item.(*athena.GetQueryResultsOutput); ok {
 				resp = r
 			}
 		} else {
 			err := query.client.GetQueryResultsPagesWithContext(ctx, &input,
 				func(page *athena.GetQueryResultsOutput, lastPage bool) bool {
-					query.metrics.queriesTotal.With(prometheus.Labels{"region": target.Region}).Inc()
+					query.metrics.queriesTotal.With(prometheus.Labels{"region": query.Region}).Inc()
 					if resp == nil {
 						resp = page
 					} else {
@@ -127,8 +127,8 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 				return nil, err
 			}
 
-			if target.CacheDuration > 0 {
-				query.cache.Set(cacheKey, resp, time.Duration(target.CacheDuration)*time.Second)
+			if query.CacheDuration > 0 {
+				query.cache.Set(cacheKey, resp, time.Duration(query.CacheDuration)*time.Second)
 			}
 		}
 

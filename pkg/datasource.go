@@ -150,7 +150,7 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 	}
 
 	for _, target := range targets {
-		result, err := target.getQueryResults(ctx, tsdbReq.PluginContext, target)
+		result, err := target.getQueryResults(ctx, tsdbReq.PluginContext)
 		if err != nil {
 			responses.Responses[target.RefId] = backend.DataResponse{
 				Error: err,
