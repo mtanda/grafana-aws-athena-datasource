@@ -130,16 +130,16 @@ func (ds *AwsAthenaDatasource) QueryData(ctx context.Context, tsdbReq *backend.Q
 		target.From = query.TimeRange.From
 		target.To = query.TimeRange.To
 
+		svc, err := ds.getClient(tsdbReq.PluginContext.DataSourceInstanceSettings, target.Region)
+		if err != nil {
+			return nil, err
+		}
 		dsInfo, err := ds.getDsInfo(tsdbReq.PluginContext.DataSourceInstanceSettings, target.Region)
 		if err != nil {
 			return nil, err
 		}
 		if target.Region == "default" || target.Region == "" {
 			target.Region = dsInfo.DefaultRegion
-		}
-		svc, err := ds.getClient(tsdbReq.PluginContext.DataSourceInstanceSettings, target.Region)
-		if err != nil {
-			return nil, err
 		}
 		target.client = svc
 		target.cache = ds.cache

@@ -160,7 +160,11 @@ func (t *AwsAthenaDatasource) getDsInfo(datasourceInfo *backend.DataSourceInstan
 		return nil, err
 	}
 
-	dsInfo.Region = region
+	if region == "default" || region == "" {
+		dsInfo.Region = dsInfo.DefaultRegion
+	} else {
+		dsInfo.Region = region
+	}
 	if v, ok := datasourceInfo.DecryptedSecureJSONData["accessKey"]; ok {
 		dsInfo.AccessKey = v
 	}
