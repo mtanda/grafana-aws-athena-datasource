@@ -25,7 +25,6 @@ export class QueryEditor extends PureComponent<Props, State> {
   constructor(props: Props) {
     super(props);
     const defaultQuery: Partial<AwsAthenaQuery> = {
-      format: 'timeserie',
       region: 'default',
       workgroup: '',
       queryExecutionId: '',

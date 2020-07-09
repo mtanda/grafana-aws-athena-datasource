@@ -20,7 +20,6 @@ export enum AwsAuthType {
 
 export interface AwsAthenaQuery extends DataQuery {
   refId: string;
-  format: string;
   region: string;
   workgroup: string;
   queryExecutionId: string;
