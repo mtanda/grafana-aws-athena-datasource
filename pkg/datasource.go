@@ -189,9 +189,11 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 			warnings = append(warnings, warning)
 			fc = data.AsStringFieldConverter
 		}
-		if *c.Name == timestampColumn && *c.Type == "varchar" {
-			fc = genTimeFieldConverter(timeFormat)
+		if *c.Name == timestampColumn {
 			timestampIndex = i
+			if *c.Type == "varchar" {
+				fc = genTimeFieldConverter(timeFormat)
+			}
 		}
 		if *c.Name == valueColumn {
 			fc = floatFieldConverter
@@ -201,6 +203,7 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 
 	if timestampIndex != -1 {
 		n := 0
+		// filter row without timestamp
 		for _, row := range resp.ResultSet.Rows {
 			if row.Data[timestampIndex].VarCharValue == nil {
 				continue
@@ -210,6 +213,7 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 		}
 		resp.ResultSet.Rows = resp.ResultSet.Rows[:n]
 
+		// sort by timestamp
 		sort.Slice(resp.ResultSet.Rows, func(i, j int) bool {
 			return *resp.ResultSet.Rows[i].Data[timestampIndex].VarCharValue < *resp.ResultSet.Rows[j].Data[timestampIndex].VarCharValue
 		})
