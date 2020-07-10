@@ -278,8 +278,13 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 	}
 
 	frames := make([]*data.Frame, 0)
-	for _, frame := range fm {
-		frames = append(frames, frame)
+	keys := make([]string, 0)
+	for key := range fm {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		frames = append(frames, fm[key])
 	}
 
 	return frames, nil
