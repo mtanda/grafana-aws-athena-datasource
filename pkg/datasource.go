@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/athena"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/patrickmn/go-cache"
@@ -187,7 +188,7 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 		if !ok {
 			warning := fmt.Sprintf("unknown column type: %s", *c.Type)
 			warnings = append(warnings, warning)
-			fc = data.AsStringFieldConverter
+			fc = stringFieldConverter
 		}
 		if *c.Name == timestampColumn {
 			timestampIndex = i
@@ -224,8 +225,7 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 		fieldNames = append(fieldNames, *column.Name)
 	}
 
-	ficm := make(map[string]*data.FrameInputConverter)
-	ficRowIdx := make(map[string]int)
+	fm := make(map[string]*data.Frame)
 	for _, row := range resp.ResultSet.Rows {
 		kv := make(map[string]string)
 		for columnIdx, cell := range row.Data {
@@ -239,56 +239,47 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 			kv[columnName] = *cell.VarCharValue
 		}
 		name := formatLegend(kv, legendFormat)
-		inputConverter, ok := ficm[name]
+		frame, ok := fm[name]
 		if !ok {
-			var err error
-			inputConverter, err = data.NewFrameInputConverter(converters, len(resp.ResultSet.Rows))
-			if err != nil {
-				return nil, err
+			fTypes := make([]data.FieldType, len(converters))
+			for i, fc := range converters {
+				fTypes[i] = fc.OutputFieldType
 			}
-			frame := inputConverter.Frame
+			frame = data.NewFrameOfFieldTypes("", 0, fTypes...)
+
 			frame.RefID = refId
 			frame.Name = name
 			meta := make(map[string]interface{})
 			meta["warnings"] = warnings
 			frame.Meta = &data.FrameMeta{Custom: meta}
-			err = inputConverter.Frame.SetFieldNames(fieldNames...)
-			if err != nil {
+			if err := frame.SetFieldNames(fieldNames...); err != nil {
 				return nil, err
 			}
-			ficm[name] = inputConverter
-			ficRowIdx[name] = 0
+			fm[name] = frame
 		}
+		newRow := make([]interface{}, 0, len(row.Data))
 		for columnIdx, cell := range row.Data {
 			if cell == nil || cell.VarCharValue == nil {
-				continue
-			}
-			if err := inputConverter.Set(columnIdx, ficRowIdx[name], *cell.VarCharValue); err != nil {
-				return nil, err
+				newRow = append(newRow, nil)
+			} else if converters[columnIdx].Converter == nil {
+				return nil, fmt.Errorf("converter should set")
+			} else {
+				convertedCell, err := converters[columnIdx].Converter(*cell.VarCharValue)
+				if err != nil {
+					return nil, err
+				} else {
+					newRow = append(newRow, convertedCell)
+				}
 			}
 		}
-		ficRowIdx[name]++
+		if len(newRow) == len(row.Data) {
+			frame.AppendRow(newRow...)
+		}
 	}
 
 	frames := make([]*data.Frame, 0)
-	for _, fic := range ficm {
-		if timestampColumn != "" {
-			var err error
-			fic.Frame, err = fic.Frame.FilterRowsByField(timestampIndex, func(i interface{}) (bool, error) {
-				timestamp, ok := i.(time.Time)
-				if !ok {
-					return false, fmt.Errorf("expected time input but got type %T", i)
-				}
-				if timestamp.IsZero() || (timestamp.Before(from) || timestamp.After(to)) {
-					return false, nil
-				}
-				return true, nil
-			})
-			if err != nil {
-				return nil, err
-			}
-		}
-		frames = append(frames, fic.Frame)
+	for _, frame := range fm {
+		frames = append(frames, frame)
 	}
 
 	return frames, nil
@@ -309,7 +300,7 @@ var converterMap = map[string]data.FieldConverter{
 
 func genTimeFieldConverter(timeFormat string) data.FieldConverter {
 	return data.FieldConverter{
-		OutputFieldType: data.FieldTypeTime,
+		OutputFieldType: data.FieldTypeNullableTime,
 		Converter: func(v interface{}) (interface{}, error) {
 			val, ok := v.(string)
 			if !ok {
@@ -318,46 +309,61 @@ func genTimeFieldConverter(timeFormat string) data.FieldConverter {
 			if t, err := time.Parse(timeFormat, val); err != nil {
 				return nil, err
 			} else {
-				return t, nil
+				return aws.Time(t), nil
 			}
 		},
 	}
 }
 
 var stringFieldConverter = data.FieldConverter{
-	OutputFieldType: data.FieldTypeString,
-}
-
-var intFieldConverter = data.FieldConverter{
-	OutputFieldType: data.FieldTypeInt64,
+	OutputFieldType: data.FieldTypeNullableString,
 	Converter: func(v interface{}) (interface{}, error) {
 		val, ok := v.(string)
 		if !ok {
 			return nil, fmt.Errorf("expected string input but got type %T", v)
 		}
-		return strconv.ParseInt(val, 10, 64)
+		return aws.String(val), nil
+	},
+}
+
+var intFieldConverter = data.FieldConverter{
+	OutputFieldType: data.FieldTypeNullableInt64,
+	Converter: func(v interface{}) (interface{}, error) {
+		val, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string input but got type %T", v)
+		}
+		if cval, err := strconv.ParseInt(val, 10, 64); err != nil {
+			return nil, err
+		} else {
+			return aws.Int64(cval), nil
+		}
 	},
 }
 
 var floatFieldConverter = data.FieldConverter{
-	OutputFieldType: data.FieldTypeFloat64,
+	OutputFieldType: data.FieldTypeNullableFloat64,
 	Converter: func(v interface{}) (interface{}, error) {
 		val, ok := v.(string)
 		if !ok {
 			return nil, fmt.Errorf("expected string input but got type %T", v)
 		}
-		return strconv.ParseFloat(val, 64)
+		if cval, err := strconv.ParseFloat(val, 64); err != nil {
+			return nil, err
+		} else {
+			return aws.Float64(cval), nil
+		}
 	},
 }
 
 var boolFieldConverter = data.FieldConverter{
-	OutputFieldType: data.FieldTypeBool,
+	OutputFieldType: data.FieldTypeNullableBool,
 	Converter: func(v interface{}) (interface{}, error) {
 		val, ok := v.(string)
 		if !ok {
 			return nil, fmt.Errorf("expected string input but got type %T", v)
 		}
-		return val == "true", nil
+		return aws.Bool(val == "true"), nil
 	},
 }
 
