@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -41,17 +42,23 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 	if query.QueryString == "" {
 		dedupe := true // TODO: add query option?
 		if dedupe {
-			bi := &athena.BatchGetQueryExecutionInput{}
-			for _, input := range query.Inputs {
-				bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
+			allQueryExecution := make([]*athena.QueryExecution, 0)
+			for i := 0; i < len(query.Inputs); i += AWS_API_RESULT_MAX_LENGTH {
+				e := int64(math.Min(float64(i+AWS_API_RESULT_MAX_LENGTH), float64(len(query.Inputs))))
+				bi := &athena.BatchGetQueryExecutionInput{}
+				for _, input := range query.Inputs[i:e] {
+					bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
+				}
+				bo, err := query.client.BatchGetQueryExecutionWithContext(ctx, bi)
+				if err != nil {
+					return nil, err
+				}
+				allQueryExecution = append(allQueryExecution, bo.QueryExecutions...)
 			}
-			bo, err := query.client.BatchGetQueryExecutionWithContext(ctx, bi)
-			if err != nil {
-				return nil, err
-			}
+
 			dupCheck := make(map[string]bool)
 			query.Inputs = make([]athena.GetQueryResultsInput, 0)
-			for _, q := range bo.QueryExecutions {
+			for _, q := range allQueryExecution {
 				if _, dup := dupCheck[*q.Query]; dup {
 					continue
 				}
