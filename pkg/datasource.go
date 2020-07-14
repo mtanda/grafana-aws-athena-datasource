@@ -284,6 +284,21 @@ func parseResponse(resp *athena.GetQueryResultsOutput, refId string, from time.T
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
+		// skip out of time range data
+		if timestampIndex != -1 {
+			timeField := fm[key].Fields[timestampIndex]
+			l := timeField.Len()
+			if l > 0 {
+				v := timeField.At(l - 1)
+				lastTime, ok := v.(*time.Time)
+				if !ok {
+					return nil, fmt.Errorf("expected time input but got type %T", v)
+				}
+				if lastTime.Before(from) {
+					continue
+				}
+			}
+		}
 		frames = append(frames, fm[key])
 	}
 
