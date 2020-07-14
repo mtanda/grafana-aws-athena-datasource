@@ -63,7 +63,8 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
   }
 
   async getQueryExecutionIdOptions(region: string, workgroup: string): Promise<Array<SelectableValue<string>>> {
-    const to = new Date().toISOString(); // TODO
+    const templateSrv = getTemplateSrv();
+    const to = new Date(parseInt(templateSrv.replace('$__to'), 10)).toISOString();
     const queryExecutions = await this.getQueryExecutions(region, -1, '.*', workgroup, to);
     return queryExecutions.map(e => {
       const id = e.QueryExecutionId;
@@ -178,7 +179,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
         workGroup = '';
       }
       workGroup = templateSrv.replace(workGroup);
-      const to = new Date().toISOString(); // TODO
+      const to = new Date(parseInt(templateSrv.replace('$__to'), 10)).toISOString();
 
       const queryExecutions = await this.getQueryExecutions(region, limit, pattern, workGroup, to);
       return queryExecutions.map(n => {
@@ -202,7 +203,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
         workGroup = '';
       }
       workGroup = templateSrv.replace(workGroup);
-      const to = new Date().toISOString(); // TODO
+      const to = new Date(parseInt(templateSrv.replace('$__to'), 10)).toISOString();
 
       const queryExecutionsByName = await this.getQueryExecutionsByName(region, limit, pattern, workGroup, to);
       return queryExecutionsByName.map(n => {
