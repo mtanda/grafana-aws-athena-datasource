@@ -1,4 +1,4 @@
-import { DataSourceInstanceSettings, MetricFindValue, SelectableValue } from '@grafana/data';
+import { DataSourceInstanceSettings, MetricFindValue, SelectableValue, ScopedVars } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
 import { AwsAthenaQuery, AwsAthenaOptions } from './types';
 
@@ -12,14 +12,14 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
     this.outputLocation = instanceSettings.jsonData.outputLocation;
   }
 
-  applyTemplateVariables(query: AwsAthenaQuery) {
+  applyTemplateVariables(query: AwsAthenaQuery, scopedVars: ScopedVars) {
     // TODO: pass scopedVars to templateSrv.replace()
     const templateSrv = getTemplateSrv();
-    query.region = templateSrv.replace(query.region);
+    query.region = templateSrv.replace(query.region, scopedVars);
     query.maxRows = query.maxRows || '';
     query.cacheDuration = query.cacheDuration || '';
     if (typeof query.queryString === 'undefined' || query.queryString === '') {
-      query.queryExecutionId = templateSrv.replace(query.queryExecutionId);
+      query.queryExecutionId = templateSrv.replace(query.queryExecutionId, scopedVars);
       query.inputs = query.queryExecutionId.split(/,/).map(id => {
         return {
           queryExecutionId: id,
@@ -29,7 +29,7 @@ export class DataSource extends DataSourceWithBackend<AwsAthenaQuery, AwsAthenaO
       query.queryExecutionId = '';
       query.inputs = [];
     }
-    query.queryString = templateSrv.replace(query.queryString) || '';
+    query.queryString = templateSrv.replace(query.queryString, scopedVars) || '';
     query.outputLocation = this.outputLocation;
     return query;
   }
