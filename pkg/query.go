@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/athena"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/patrickmn/go-cache"
@@ -50,7 +51,10 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 					bi.QueryExecutionIds = append(bi.QueryExecutionIds, input.QueryExecutionId)
 				}
 				bo, err := query.client.BatchGetQueryExecutionWithContext(ctx, bi)
-				if err != nil {
+				if aerr, ok := err.(awserr.Error); ok && aerr.Code() == athena.ErrCodeInvalidRequestException {
+					backend.Logger.Warn("Batch Get Query Execution Warning", "warn", aerr.Message())
+					bo = &athena.BatchGetQueryExecutionOutput{QueryExecutions: make([]*athena.QueryExecution, 0)}
+				} else if err != nil {
 					return nil, err
 				}
 				allQueryExecution = append(allQueryExecution, bo.QueryExecutions...)
@@ -104,6 +108,9 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 	result := athena.GetQueryResultsOutput{
 		ResultSet: &athena.ResultSet{
 			Rows: make([]*athena.Row, 0),
+			ResultSetMetadata: &athena.ResultSetMetadata{
+				ColumnInfo: make([]*athena.ColumnInfo, 0),
+			},
 		},
 	}
 	for _, input := range query.Inputs {
@@ -130,13 +137,19 @@ func (query *AwsAthenaQuery) getQueryResults(ctx context.Context, pluginContext 
 					}
 					return !lastPage
 				})
-			if err != nil {
+			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == athena.ErrCodeInvalidRequestException {
+				backend.Logger.Warn("Get Query Results Warning", "warn", aerr.Message())
+			} else if err != nil {
 				return nil, err
 			}
 
 			if query.CacheDuration > 0 {
 				query.cache.Set(cacheKey, resp, time.Duration(query.CacheDuration)*time.Second)
 			}
+		}
+
+		if resp == nil {
+			continue
 		}
 
 		result.ResultSet.ResultSetMetadata = resp.ResultSet.ResultSetMetadata
