@@ -11,7 +11,7 @@
   "author": "Mitsuhiro Tanda",
   "license": "Apache",
   "dependencies": {
-    "lodash": "^4.17.15"
+    "lodash": "^4.17.21"
   },
   "devDependencies": {
     "@grafana/data": "^7.3.1",
