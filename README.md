@@ -1,6 +1,6 @@
 # grafana aws athena datasource
 
-Grafana plugin for queryng AWS Athena as data source
+Grafana plugin for querying AWS Athena as data source
 
 ## Installation
 
