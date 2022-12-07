@@ -16,7 +16,7 @@
   "devDependencies": {
     "@grafana/data": "^7.3.1",
     "@grafana/runtime": "^7.3.1",
-    "@grafana/toolkit": "^7.3.1",
+    "@grafana/toolkit": "^9.3.1",
     "@grafana/ui": "^7.3.1",
     "@types/jest": "^24.0.17",
     "@types/lodash": "^4.14.136",
